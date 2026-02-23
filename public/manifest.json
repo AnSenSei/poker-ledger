@@ -1,0 +1,22 @@
+{
+  "name": "德扑记账",
+  "short_name": "德扑记账",
+  "description": "朋友局德州扑克记账工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#16a34a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
