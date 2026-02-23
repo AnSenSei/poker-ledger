@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
 
 function getLocalDatetime() {
   const now = new Date();
@@ -12,28 +13,29 @@ function getLocalDatetime() {
 
 export default function NewSessionPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [note, setNote] = useState('');
   const [datetime, setDatetime] = useState(getLocalDatetime);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleCreate() {
     setSubmitting(true);
-    const { data, error } = await supabase
-      .from('sessions')
-      .insert({
-        note: note.trim() || null,
-        created_at: new Date(datetime).toISOString(),
-      })
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('sessions')
+        .insert({
+          note: note.trim() || null,
+          created_at: new Date(datetime).toISOString(),
+        })
+        .select()
+        .single();
 
-    if (error || !data) {
-      alert('创建失败: ' + (error?.message ?? '未知错误'));
+      if (error || !data) throw error ?? new Error('未知错误');
+      router.push(`/sessions/${data.id}`);
+    } catch (err) {
+      toast('创建失败: ' + (err instanceof Error ? err.message : '未知错误'));
       setSubmitting(false);
-      return;
     }
-
-    router.push(`/sessions/${data.id}`);
   }
 
   return (

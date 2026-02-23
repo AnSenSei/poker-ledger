@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Player, Session } from '@/lib/types';
+import { formatDateShort } from '@/lib/utils';
+import { useToast } from '@/components/Toast';
 import ProfitChart from '@/components/ProfitChart';
 import SessionChart from '@/components/SessionChart';
 
@@ -17,31 +19,39 @@ interface EntryRow {
 export default function StatsPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const router = useRouter();
+  const { toast } = useToast();
 
   const [player, setPlayer] = useState<Player | null>(null);
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'all' | '30d' | '90d'>('all');
 
-  const fetchData = useCallback(async () => {
-    const [playerRes, entriesRes] = await Promise.all([
-      supabase.from('players').select('*').eq('id', playerId).single(),
-      supabase
-        .from('entries')
-        .select('id, buy_in, cash_out, sessions(*)')
-        .eq('player_id', playerId)
-        .not('cash_out', 'is', null)
-        .order('created_at', { ascending: true }),
-    ]);
-
-    setPlayer(playerRes.data);
-    setEntries((entriesRes.data as EntryRow[] | null) ?? []);
-    setLoading(false);
-  }, [playerId]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let cancelled = false;
+    async function load() {
+      try {
+        const [playerRes, entriesRes] = await Promise.all([
+          supabase.from('players').select('*').eq('id', playerId).single(),
+          supabase
+            .from('entries')
+            .select('id, buy_in, cash_out, sessions(*)')
+            .eq('player_id', playerId)
+            .not('cash_out', 'is', null)
+            .order('created_at', { ascending: true }),
+        ]);
+        if (cancelled) return;
+        if (playerRes.error) throw playerRes.error;
+        setPlayer(playerRes.data);
+        setEntries((entriesRes.data as EntryRow[] | null) ?? []);
+      } catch (err) {
+        if (!cancelled) toast('加载失败: ' + (err instanceof Error ? err.message : ''));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [playerId, toast]);
 
   if (loading) {
     return (
@@ -83,16 +93,19 @@ export default function StatsPage() {
   const winRate = totalSessions > 0 ? Math.round((winSessions / totalSessions) * 100) : 0;
 
   // ─── Chart Data ───
-  let cumulative = 0;
-  const chartData = settledEntries.map((e, i) => {
-    const net = Number(e.cash_out!) - Number(e.buy_in);
-    cumulative += net;
-    const d = new Date(e.sessions.created_at);
-    return {
-      label: `${d.getMonth() + 1}/${d.getDate()}`,
-      cumulative,
-    };
-  });
+  const chartData = settledEntries.reduce<{ label: string; cumulative: number }[]>(
+    (acc, e) => {
+      const net = Number(e.cash_out!) - Number(e.buy_in);
+      const prev = acc.length > 0 ? acc[acc.length - 1].cumulative : 0;
+      const d = new Date(e.sessions.created_at);
+      acc.push({
+        label: `${d.getMonth() + 1}/${d.getDate()}`,
+        cumulative: prev + net,
+      });
+      return acc;
+    },
+    []
+  );
 
   // ─── Monthly Summary ───
   const monthlySummary = settledEntries.reduce((acc, e) => {
@@ -108,13 +121,6 @@ export default function StatsPage() {
     .reverse()
     .map(([month, data]) => ({ month, ...data }));
 
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('zh-CN', {
-      month: 'numeric',
-      day: 'numeric',
-      weekday: 'short',
-    });
-  }
 
   return (
     <div className="max-w-lg mx-auto p-4 pb-8">
@@ -275,11 +281,11 @@ export default function StatsPage() {
                 >
                   <div>
                     <span className="text-gray-300">
-                      {e.sessions.note || formatDate(e.sessions.created_at)}
+                      {e.sessions.note || formatDateShort(e.sessions.created_at)}
                     </span>
                     {e.sessions.note && (
                       <span className="text-gray-600 text-sm ml-2">
-                        {formatDate(e.sessions.created_at)}
+                        {formatDateShort(e.sessions.created_at)}
                       </span>
                     )}
                   </div>

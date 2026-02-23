@@ -4,32 +4,84 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Player, Session } from '@/lib/types';
+import { formatDateShort } from '@/lib/utils';
+import { useToast } from '@/components/Toast';
 import BottomSheet from '@/components/BottomSheet';
+import ConfirmDialog from '@/components/ConfirmDialog';
+
+const PAGE_SIZE = 20;
 
 export default function HomePage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [players, setPlayers] = useState<Player[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+
+  // Confirm dialog
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
   useEffect(() => {
     const saved = localStorage.getItem('poker-player-id');
     if (saved) setSelectedPlayerId(saved);
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchData() {
-    const [playersRes, sessionsRes] = await Promise.all([
-      supabase.from('players').select('*').order('name'),
-      supabase.from('sessions').select('*').order('created_at', { ascending: false }).limit(20),
-    ]);
-    setPlayers(playersRes.data ?? []);
-    setSessions(sessionsRes.data ?? []);
-    setLoading(false);
+    try {
+      const [playersRes, sessionsRes] = await Promise.all([
+        supabase.from('players').select('*').order('name'),
+        supabase
+          .from('sessions')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE + 1),
+      ]);
+      if (playersRes.error) throw playersRes.error;
+      if (sessionsRes.error) throw sessionsRes.error;
+      const data = sessionsRes.data ?? [];
+      setHasMore(data.length > PAGE_SIZE);
+      setPlayers(playersRes.data ?? []);
+      setSessions(data.slice(0, PAGE_SIZE));
+    } catch (err) {
+      toast('加载失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const last = sessions[sessions.length - 1];
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .lt('created_at', last.created_at)
+        .limit(PAGE_SIZE + 1);
+      if (error) throw error;
+      const rows = data ?? [];
+      setHasMore(rows.length > PAGE_SIZE);
+      setSessions((prev) => [...prev, ...rows.slice(0, PAGE_SIZE)]);
+    } catch {
+      toast('加载更多失败');
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   function handlePlayerChange(id: string) {
@@ -37,18 +89,29 @@ export default function HomePage() {
     localStorage.setItem('poker-player-id', id);
   }
 
-  async function handleDeletePlayer(player: Player) {
-    if (!confirm(`确认删除玩家「${player.name}」？\n该玩家的所有历史记录也会被删除。`)) return;
-    const { error } = await supabase.from('players').delete().eq('id', player.id);
-    if (error) {
-      alert('删除失败: ' + error.message);
-      return;
-    }
-    if (selectedPlayerId === player.id) {
-      setSelectedPlayerId('');
-      localStorage.removeItem('poker-player-id');
-    }
-    fetchData();
+  function handleDeletePlayer(player: Player) {
+    setConfirmState({
+      open: true,
+      title: '删除玩家',
+      message: `确认删除玩家「${player.name}」？该玩家的所有历史记录也会被删除。`,
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, open: false }));
+        try {
+          const { error } = await supabase
+            .from('players')
+            .delete()
+            .eq('id', player.id);
+          if (error) throw error;
+          if (selectedPlayerId === player.id) {
+            setSelectedPlayerId('');
+            localStorage.removeItem('poker-player-id');
+          }
+          fetchData();
+        } catch (err) {
+          toast('删除失败: ' + (err instanceof Error ? err.message : ''));
+        }
+      },
+    });
   }
 
   async function handleRenamePlayer(player: Player) {
@@ -57,25 +120,17 @@ export default function HomePage() {
       setEditingPlayer(null);
       return;
     }
-    const { error } = await supabase
-      .from('players')
-      .update({ name: trimmed })
-      .eq('id', player.id);
-    if (error) {
-      alert('改名失败: ' + error.message);
-      return;
+    try {
+      const { error } = await supabase
+        .from('players')
+        .update({ name: trimmed })
+        .eq('id', player.id);
+      if (error) throw error;
+      setEditingPlayer(null);
+      fetchData();
+    } catch (err) {
+      toast('改名失败: ' + (err instanceof Error ? err.message : ''));
     }
-    setEditingPlayer(null);
-    fetchData();
-  }
-
-  function formatDate(iso: string) {
-    const d = new Date(iso);
-    return d.toLocaleDateString('zh-CN', {
-      month: 'numeric',
-      day: 'numeric',
-      weekday: 'short',
-    });
   }
 
   if (loading) {
@@ -135,7 +190,7 @@ export default function HomePage() {
             if (selectedPlayerId) {
               router.push(`/stats/${selectedPlayerId}`);
             } else {
-              alert('请先选择你是谁');
+              toast('请先选择你是谁', 'info');
             }
           }}
           className="bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white rounded-xl py-4 text-lg font-medium transition-colors"
@@ -144,41 +199,80 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* Recent Sessions */}
+      {/* Unsettled Sessions */}
+      {sessions.filter((s) => s.status === 'open').length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-3 text-yellow-400">⚠️ 未结算</h2>
+          <div className="space-y-2">
+            {sessions
+              .filter((s) => s.status === 'open')
+              .map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => router.push(`/sessions/${s.id}`)}
+                  className="w-full bg-yellow-900/20 border border-yellow-800/50 hover:bg-yellow-900/30 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-yellow-900/40"
+                >
+                  <div>
+                    <span className="text-gray-200">
+                      {s.note || formatDateShort(s.created_at)}
+                    </span>
+                    {s.note && (
+                      <span className="text-gray-500 text-sm ml-2">
+                        {formatDateShort(s.created_at)}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs px-2 py-1 rounded-full bg-yellow-900/50 text-yellow-400">
+                    进行中
+                  </span>
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Settled Sessions */}
       <div>
-        <h2 className="text-lg font-semibold mb-3 text-gray-300">最近牌局</h2>
-        {sessions.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">还没有牌局记录</p>
+        <h2 className="text-lg font-semibold mb-3 text-gray-300">历史牌局</h2>
+        {sessions.filter((s) => s.status === 'settled').length === 0 ? (
+          <p className="text-gray-500 text-center py-8">还没有已结算的牌局</p>
         ) : (
           <div className="space-y-2">
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => router.push(`/sessions/${s.id}`)}
-                className="w-full bg-gray-800 hover:bg-gray-750 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-gray-700"
-              >
-                <div>
-                  <span className="text-gray-200">
-                    {s.note || formatDate(s.created_at)}
-                  </span>
-                  {s.note && (
-                    <span className="text-gray-500 text-sm ml-2">
-                      {formatDate(s.created_at)}
-                    </span>
-                  )}
-                </div>
-                <span
-                  className={`text-xs px-2 py-1 rounded-full ${
-                    s.status === 'settled'
-                      ? 'bg-green-900/50 text-green-400'
-                      : 'bg-yellow-900/50 text-yellow-400'
-                  }`}
+            {sessions
+              .filter((s) => s.status === 'settled')
+              .map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => router.push(`/sessions/${s.id}`)}
+                  className="w-full bg-gray-800 hover:bg-gray-750 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-gray-700"
                 >
-                  {s.status === 'settled' ? '已结算' : '进行中'}
-                </span>
-              </button>
-            ))}
+                  <div>
+                    <span className="text-gray-200">
+                      {s.note || formatDateShort(s.created_at)}
+                    </span>
+                    {s.note && (
+                      <span className="text-gray-500 text-sm ml-2">
+                        {formatDateShort(s.created_at)}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs px-2 py-1 rounded-full bg-green-900/50 text-green-400">
+                    已结算
+                  </span>
+                </button>
+              ))}
           </div>
+        )}
+
+        {/* Load More */}
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full mt-4 text-gray-500 hover:text-gray-300 py-3 text-sm transition-colors disabled:text-gray-700"
+          >
+            {loadingMore ? '加载中...' : '加载更多'}
+          </button>
         )}
       </div>
       {/* Manage Players Bottom Sheet */}
@@ -231,6 +325,17 @@ export default function HomePage() {
           )}
         </div>
       </BottomSheet>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmState.open}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() =>
+          setConfirmState((prev) => ({ ...prev, open: false }))
+        }
+        title={confirmState.title}
+        message={confirmState.message}
+      />
     </div>
   );
 }

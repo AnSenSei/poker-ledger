@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
 
 interface PlayerStats {
   id: string;
@@ -19,24 +20,28 @@ type SortKey = 'totalProfit' | 'winRate' | 'totalSessions' | 'avgProfit';
 
 export default function LeaderboardPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [stats, setStats] = useState<PlayerStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>('totalProfit');
 
   useEffect(() => {
     fetchLeaderboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchLeaderboard() {
-    const { data: entries } = await supabase
-      .from('entries')
-      .select('player_id, buy_in, cash_out, players(id, name)')
-      .not('cash_out', 'is', null);
+    try {
+      const { data: entries, error } = await supabase
+        .from('entries')
+        .select('player_id, buy_in, cash_out, players(id, name)')
+        .not('cash_out', 'is', null);
 
-    if (!entries) {
-      setLoading(false);
-      return;
-    }
+      if (error) throw error;
+      if (!entries) {
+        setLoading(false);
+        return;
+      }
 
     // Group by player
     const playerMap = new Map<string, { name: string; profits: number[] }>();
@@ -69,8 +74,12 @@ export default function LeaderboardPage() {
       });
     }
 
-    setStats(result);
-    setLoading(false);
+      setStats(result);
+    } catch (err) {
+      toast('加载排行榜失败: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setLoading(false);
+    }
   }
 
   const sorted = [...stats].sort((a, b) => {

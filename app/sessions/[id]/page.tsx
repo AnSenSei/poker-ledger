@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -12,18 +12,24 @@ import {
 import {
   validateZeroSum,
   calculateSettlement,
-  formatSettlementText,
 } from '@/lib/settlement';
+import { formatDateFull } from '@/lib/utils';
+import { useDebounce } from '@/lib/useDebounce';
+import { useToast } from '@/components/Toast';
 import BottomSheet from '@/components/BottomSheet';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import EntryCard from '@/components/EntryCard';
+import SettlementResult from '@/components/SettlementResult';
 
 interface LocalEntry extends EntryWithPlayer {
-  remaining: string; // 剩余筹码 input
-  early: string;     // 已提前兑出 input
+  remaining: string;
+  early: string;
 }
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { toast } = useToast();
 
   const [session, setSession] = useState<Session | null>(null);
   const [entries, setEntries] = useState<LocalEntry[]>([]);
@@ -31,7 +37,11 @@ export default function SessionDetailPage() {
   const [settlements, setSettlements] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const settlementRef = useRef<HTMLDivElement>(null);
+
+  // Edit note state
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteValue, setNoteValue] = useState('');
 
   // Add player state
   const [showAdd, setShowAdd] = useState(false);
@@ -39,103 +49,138 @@ export default function SessionDetailPage() {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [addBuyIn, setAddBuyIn] = useState('400');
 
+  // Confirm dialog state
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+
   const fetchData = useCallback(async () => {
-    const [sessionRes, entriesRes, playersRes, settlementsRes] =
-      await Promise.all([
-        supabase.from('sessions').select('*').eq('id', id).single(),
-        supabase
-          .from('entries')
-          .select('*, players(*)')
-          .eq('session_id', id)
-          .order('created_at'),
-        supabase.from('players').select('*').order('name'),
-        supabase
-          .from('settlements')
-          .select('*, from_player:players!settlements_from_player_id_fkey(*), to_player:players!settlements_to_player_id_fkey(*)')
-          .eq('session_id', id),
-      ]);
+    try {
+      const [sessionRes, entriesRes, playersRes, settlementsRes] =
+        await Promise.all([
+          supabase.from('sessions').select('*').eq('id', id).single(),
+          supabase
+            .from('entries')
+            .select('*, players(*)')
+            .eq('session_id', id)
+            .order('created_at'),
+          supabase.from('players').select('*').order('name'),
+          supabase
+            .from('settlements')
+            .select(
+              '*, from_player:players!settlements_from_player_id_fkey(*), to_player:players!settlements_to_player_id_fkey(*)'
+            )
+            .eq('session_id', id),
+        ]);
 
-    setSession(sessionRes.data);
-    setAllPlayers(playersRes.data ?? []);
+      if (sessionRes.error) throw sessionRes.error;
+      if (entriesRes.error) throw entriesRes.error;
 
-    // Map entries to local state with remaining/early fields
-    const mapped: LocalEntry[] = (entriesRes.data ?? []).map((e: EntryWithPlayer) => ({
-      ...e,
-      remaining: e.cash_out != null ? String(e.cash_out) : '',
-      early: '0',
-    }));
-    setEntries(mapped);
+      setSession(sessionRes.data);
+      setAllPlayers(playersRes.data ?? []);
 
-    // Map settlements
-    if (settlementsRes.data && settlementsRes.data.length > 0) {
-      setSettlements(
-        settlementsRes.data.map((s: { from_player: Player; to_player: Player; amount: number }) => ({
-          from: s.from_player.name,
-          fromId: s.from_player.id,
-          to: s.to_player.name,
-          toId: s.to_player.id,
-          amount: Number(s.amount),
-        }))
+      const mapped: LocalEntry[] = (entriesRes.data ?? []).map(
+        (e: EntryWithPlayer) => ({
+          ...e,
+          remaining: e.cash_out != null ? String(e.cash_out) : '',
+          early: '0',
+        })
       );
-    }
+      setEntries(mapped);
 
-    setLoading(false);
-  }, [id]);
+      if (settlementsRes.data && settlementsRes.data.length > 0) {
+        setSettlements(
+          settlementsRes.data.map(
+            (s: {
+              from_player: Player;
+              to_player: Player;
+              amount: number;
+            }) => ({
+              from: s.from_player.name,
+              fromId: s.from_player.id,
+              to: s.to_player.name,
+              toId: s.to_player.id,
+              amount: Number(s.amount),
+            })
+          )
+        );
+      }
+    } catch (err) {
+      toast('加载数据失败: ' + (err instanceof Error ? err.message : '未知错误'));
+    } finally {
+      setLoading(false);
+    }
+  }, [id, toast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // ─── Edit Note ───
+  async function handleSaveNote() {
+    const trimmed = noteValue.trim();
+    try {
+      const { error } = await supabase
+        .from('sessions')
+        .update({ note: trimmed || null })
+        .eq('id', id);
+      if (error) throw error;
+      setSession((prev) =>
+        prev ? { ...prev, note: trimmed || null } : prev
+      );
+    } catch (err) {
+      toast('保存备注失败: ' + (err instanceof Error ? err.message : ''));
+    }
+    setEditingNote(false);
+  }
+
   // ─── Add Player ───
   async function handleAddPlayer() {
     let playerId = addPlayerId;
 
-    // Create new player if needed
-    if (!playerId && newPlayerName.trim()) {
-      const { data, error } = await supabase
-        .from('players')
-        .upsert({ name: newPlayerName.trim() }, { onConflict: 'name' })
-        .select()
-        .single();
-      if (error || !data) {
-        alert('添加玩家失败: ' + (error?.message ?? ''));
+    try {
+      if (!playerId && newPlayerName.trim()) {
+        const { data, error } = await supabase
+          .from('players')
+          .upsert({ name: newPlayerName.trim() }, { onConflict: 'name' })
+          .select()
+          .single();
+        if (error || !data) throw error ?? new Error('创建玩家失败');
+        playerId = data.id;
+      }
+
+      if (!playerId) {
+        toast('请选择或输入玩家名', 'info');
         return;
       }
-      playerId = data.id;
+
+      if (entries.some((e) => e.player_id === playerId)) {
+        toast('该玩家已在本场牌局中', 'info');
+        return;
+      }
+
+      const { error } = await supabase.from('entries').insert({
+        session_id: id,
+        player_id: playerId,
+        buy_in: Number(addBuyIn) || 400,
+      });
+      if (error) throw error;
+
+      setShowAdd(false);
+      setAddPlayerId('');
+      setNewPlayerName('');
+      setAddBuyIn('400');
+      fetchData();
+    } catch (err) {
+      toast('添加失败: ' + (err instanceof Error ? err.message : ''));
     }
-
-    if (!playerId) {
-      alert('请选择或输入玩家名');
-      return;
-    }
-
-    // Check duplicate
-    if (entries.some((e) => e.player_id === playerId)) {
-      alert('该玩家已在本场牌局中');
-      return;
-    }
-
-    const { error } = await supabase.from('entries').insert({
-      session_id: id,
-      player_id: playerId,
-      buy_in: Number(addBuyIn) || 400,
-    });
-
-    if (error) {
-      alert('添加失败: ' + error.message);
-      return;
-    }
-
-    // Reset & refresh
-    setShowAdd(false);
-    setAddPlayerId('');
-    setNewPlayerName('');
-    setAddBuyIn('400');
-    fetchData();
   }
 
-  // ─── Update Buy In ───
-  async function handleBuyInChange(entryId: string, value: string) {
+  // ─── Update Buy In (local) ───
+  function handleBuyInChange(entryId: string, value: string) {
     setEntries((prev) =>
       prev.map((e) =>
         e.id === entryId ? { ...e, buy_in: Number(value) || 0 } : e
@@ -143,22 +188,29 @@ export default function SessionDetailPage() {
     );
   }
 
-  async function saveBuyIn(entryId: string, value: number) {
-    await supabase
-      .from('entries')
-      .update({ buy_in: value })
-      .eq('id', entryId);
-  }
+  // ─── Save Buy In (debounced) ───
+  const debouncedSaveBuyIn = useDebounce(
+    async (entryId: string, value: number) => {
+      try {
+        const { error } = await supabase
+          .from('entries')
+          .update({ buy_in: value })
+          .eq('id', entryId);
+        if (error) throw error;
+      } catch {
+        toast('保存买入失败');
+      }
+    },
+    600
+  );
 
   // ─── Update Remaining / Early ───
   function handleRemainingChange(entryId: string, value: string) {
     setEntries((prev) =>
       prev.map((e) => {
         if (e.id !== entryId) return e;
-        const remaining = value;
-        const cashOut =
-          (Number(remaining) || 0) + (Number(e.early) || 0);
-        return { ...e, remaining, cash_out: cashOut };
+        const cashOut = (Number(value) || 0) + (Number(e.early) || 0);
+        return { ...e, remaining: value, cash_out: cashOut };
       })
     );
   }
@@ -167,123 +219,158 @@ export default function SessionDetailPage() {
     setEntries((prev) =>
       prev.map((e) => {
         if (e.id !== entryId) return e;
-        const early = value;
-        const cashOut =
-          (Number(e.remaining) || 0) + (Number(early) || 0);
-        return { ...e, early, cash_out: cashOut };
+        const cashOut = (Number(e.remaining) || 0) + (Number(value) || 0);
+        return { ...e, early: value, cash_out: cashOut };
       })
     );
   }
 
-  async function saveCashOut(entryId: string, remaining: string, early: string) {
-    const cashOut = (Number(remaining) || 0) + (Number(early) || 0);
-    if (remaining === '' && early === '0') return; // nothing to save
-    await supabase
-      .from('entries')
-      .update({ cash_out: cashOut })
-      .eq('id', entryId);
-  }
+  const debouncedSaveCashOut = useDebounce(
+    async (entryId: string, remaining: string, early: string) => {
+      const cashOut = (Number(remaining) || 0) + (Number(early) || 0);
+      if (remaining === '' && early === '0') return;
+      try {
+        const { error } = await supabase
+          .from('entries')
+          .update({ cash_out: cashOut })
+          .eq('id', entryId);
+        if (error) throw error;
+      } catch {
+        toast('保存结算失败');
+      }
+    },
+    600
+  );
 
   // ─── Remove Player ───
-  async function handleRemovePlayer(entryId: string) {
-    if (!confirm('确认移除该玩家？')) return;
-    await supabase.from('entries').delete().eq('id', entryId);
-    fetchData();
+  function handleRemovePlayer(entryId: string) {
+    setConfirmState({
+      open: true,
+      title: '移除玩家',
+      message: '确认移除该玩家？',
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, open: false }));
+        try {
+          const { error } = await supabase
+            .from('entries')
+            .delete()
+            .eq('id', entryId);
+          if (error) throw error;
+          fetchData();
+        } catch {
+          toast('移除失败');
+        }
+      },
+    });
   }
 
   // ─── Settle ───
   async function handleSettle() {
-    // Check all players have cash_out
     const incomplete = entries.filter(
       (e) => e.remaining === '' && e.cash_out == null
     );
     if (incomplete.length > 0) {
-      alert(
-        `以下玩家还没填结算：${incomplete.map((e) => e.players.name).join('、')}`
+      toast(
+        `以下玩家还没填结算：${incomplete.map((e) => e.players.name).join('、')}`,
+        'info'
       );
       return;
     }
 
-    // Build entries with computed cash_out for validation
     const withCashOut: EntryWithPlayer[] = entries.map((e) => ({
       ...e,
       cash_out: (Number(e.remaining) || 0) + (Number(e.early) || 0),
     }));
 
-    // Zero-sum validation
     const err = validateZeroSum(withCashOut);
     if (err) {
-      alert('⚠️ ' + err);
+      toast('⚠️ ' + err, 'info');
       return;
     }
 
     setSettling(true);
+    try {
+      for (const e of withCashOut) {
+        await supabase
+          .from('entries')
+          .update({ cash_out: e.cash_out })
+          .eq('id', e.id);
+      }
 
-    // Save all cash_out values
-    for (const e of withCashOut) {
+      const transfers = calculateSettlement(withCashOut);
+
+      if (transfers.length > 0) {
+        await supabase.from('settlements').delete().eq('session_id', id);
+        const { error } = await supabase.from('settlements').insert(
+          transfers.map((t) => ({
+            session_id: id,
+            from_player_id: t.fromId,
+            to_player_id: t.toId,
+            amount: t.amount,
+          }))
+        );
+        if (error) throw error;
+      }
+
       await supabase
-        .from('entries')
-        .update({ cash_out: e.cash_out })
-        .eq('id', e.id);
-    }
+        .from('sessions')
+        .update({ status: 'settled' })
+        .eq('id', id);
 
-    // Calculate settlement
-    const transfers = calculateSettlement(withCashOut);
-
-    // Save settlements
-    if (transfers.length > 0) {
-      // Clear old settlements first
-      await supabase.from('settlements').delete().eq('session_id', id);
-
-      await supabase.from('settlements').insert(
-        transfers.map((t) => ({
-          session_id: id,
-          from_player_id: t.fromId,
-          to_player_id: t.toId,
-          amount: t.amount,
-        }))
+      setSettlements(transfers);
+      setSession((prev) =>
+        prev ? { ...prev, status: 'settled' } : prev
       );
+      toast('结算完成！', 'success');
+    } catch (err) {
+      toast(
+        '结算失败: ' + (err instanceof Error ? err.message : '未知错误')
+      );
+    } finally {
+      setSettling(false);
     }
-
-    // Mark session as settled
-    await supabase
-      .from('sessions')
-      .update({ status: 'settled' })
-      .eq('id', id);
-
-    setSettlements(transfers);
-    setSession((prev) => (prev ? { ...prev, status: 'settled' } : prev));
-    setSettling(false);
   }
 
   // ─── Reopen ───
   async function handleReopen() {
-    await supabase
-      .from('sessions')
-      .update({ status: 'open' })
-      .eq('id', id);
-    await supabase.from('settlements').delete().eq('session_id', id);
-    setSession((prev) => (prev ? { ...prev, status: 'open' } : prev));
-    setSettlements([]);
+    try {
+      await supabase
+        .from('sessions')
+        .update({ status: 'open' })
+        .eq('id', id);
+      await supabase.from('settlements').delete().eq('session_id', id);
+      setSession((prev) =>
+        prev ? { ...prev, status: 'open' } : prev
+      );
+      setSettlements([]);
+    } catch {
+      toast('重新打开失败');
+    }
   }
 
   // ─── Delete Session ───
-  async function handleDelete() {
-    if (!confirm('确认删除这场牌局？\n所有记录和结算单都会被删除。')) return;
-    const { error } = await supabase.from('sessions').delete().eq('id', id);
-    if (error) {
-      alert('删除失败: ' + error.message);
-      return;
-    }
-    router.push('/');
-  }
-
-  // ─── Copy Settlement ───
-  function handleCopy() {
-    const text = formatSettlementText(settlements, session?.note);
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  function handleDelete() {
+    setConfirmState({
+      open: true,
+      title: '删除牌局',
+      message: '确认删除这场牌局？所有记录和结算单都会被删除。',
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, open: false }));
+        try {
+          const { error } = await supabase
+            .from('sessions')
+            .delete()
+            .eq('id', id);
+          if (error) throw error;
+          router.push('/');
+        } catch (err) {
+          toast(
+            '删除失败: ' +
+              (err instanceof Error ? err.message : '未知错误')
+          );
+        }
+      },
+    });
   }
 
   // ─── Computed Values ───
@@ -294,22 +381,10 @@ export default function SessionDetailPage() {
   );
   const diff = totalBuyIn - totalCashOut;
   const isBalanced = Math.abs(diff) < 0.01;
-  const allFilled = entries.length > 0 && entries.every((e) => e.remaining !== '');
+  const allFilled =
+    entries.length > 0 && entries.every((e) => e.remaining !== '');
   const isOpen = session?.status === 'open';
 
-  // ─── Helpers ───
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      weekday: 'short',
-      hour: 'numeric',
-      minute: 'numeric',
-    });
-  }
-
-  // Players not already in the session
   const availablePlayers = allPlayers.filter(
     (p) => !entries.some((e) => e.player_id === p.id)
   );
@@ -341,11 +416,35 @@ export default function SessionDetailPage() {
           ←
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold">
-            {session.note || '牌局详情'}
-          </h1>
+          {editingNote ? (
+            <input
+              type="text"
+              value={noteValue}
+              onChange={(e) => setNoteValue(e.target.value)}
+              onBlur={handleSaveNote}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveNote();
+                if (e.key === 'Escape') setEditingNote(false);
+              }}
+              autoFocus
+              placeholder="牌局备注"
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-2 py-1 text-xl font-bold focus:outline-none focus:border-green-500"
+            />
+          ) : (
+            <h1
+              className="text-xl font-bold cursor-pointer hover:text-green-400 transition-colors"
+              onClick={() => {
+                setNoteValue(session.note || '');
+                setEditingNote(true);
+              }}
+              title="点击编辑备注"
+            >
+              {session.note || '牌局详情'}
+              <span className="text-gray-600 text-sm ml-1">✏️</span>
+            </h1>
+          )}
           <p className="text-sm text-gray-500">
-            {formatDate(session.created_at)}
+            {formatDateFull(session.created_at)}
           </p>
         </div>
         <span
@@ -361,129 +460,19 @@ export default function SessionDetailPage() {
 
       {/* Player Entries */}
       <div className="space-y-3 mb-4">
-        {entries.map((entry) => {
-          const net =
-            entry.cash_out != null
-              ? Number(entry.cash_out) - Number(entry.buy_in)
-              : null;
-
-          return (
-            <div
-              key={entry.id}
-              className="bg-gray-800 rounded-xl p-4"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-semibold text-lg">
-                  {entry.players.name}
-                </span>
-                {net != null && (
-                  <span
-                    className={`font-mono font-bold ${
-                      net > 0
-                        ? 'text-green-400'
-                        : net < 0
-                        ? 'text-red-400'
-                        : 'text-gray-400'
-                    }`}
-                  >
-                    {net > 0 ? '+' : ''}
-                    {net}
-                  </span>
-                )}
-                {isOpen && (
-                  <button
-                    onClick={() => handleRemovePlayer(entry.id)}
-                    className="text-gray-600 hover:text-red-400 text-sm ml-2"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 text-sm">
-                {/* Buy In */}
-                <div>
-                  <label className="text-gray-500 block mb-1">
-                    买入
-                  </label>
-                  {isOpen ? (
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={entry.buy_in}
-                      onChange={(e) =>
-                        handleBuyInChange(entry.id, e.target.value)
-                      }
-                      onBlur={(e) =>
-                        saveBuyIn(entry.id, Number(e.target.value) || 0)
-                      }
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500"
-                    />
-                  ) : (
-                    <div className="text-center py-2 font-mono">
-                      {entry.buy_in}
-                    </div>
-                  )}
-                </div>
-
-                {/* Remaining chips */}
-                <div>
-                  <label className="text-gray-500 block mb-1">
-                    剩余筹码
-                  </label>
-                  {isOpen ? (
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={entry.remaining}
-                      onChange={(e) =>
-                        handleRemainingChange(entry.id, e.target.value)
-                      }
-                      onBlur={() =>
-                        saveCashOut(entry.id, entry.remaining, entry.early)
-                      }
-                      placeholder="0"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500"
-                    />
-                  ) : (
-                    <div className="text-center py-2 font-mono">
-                      {entry.remaining || entry.cash_out || 0}
-                    </div>
-                  )}
-                </div>
-
-                {/* Early cashout */}
-                <div>
-                  <label className="text-gray-500 block mb-1">
-                    已兑出
-                  </label>
-                  {isOpen ? (
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={entry.early}
-                      onChange={(e) =>
-                        handleEarlyChange(entry.id, e.target.value)
-                      }
-                      onBlur={() =>
-                        saveCashOut(entry.id, entry.remaining, entry.early)
-                      }
-                      placeholder="0"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500"
-                    />
-                  ) : (
-                    <div className="text-center py-2 font-mono">
-                      {entry.early || 0}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {entries.map((entry) => (
+          <EntryCard
+            key={entry.id}
+            entry={entry}
+            isOpen={isOpen}
+            onBuyInChange={handleBuyInChange}
+            onBuyInSave={debouncedSaveBuyIn}
+            onRemainingChange={handleRemainingChange}
+            onEarlyChange={handleEarlyChange}
+            onCashOutSave={debouncedSaveCashOut}
+            onRemove={handleRemovePlayer}
+          />
+        ))}
       </div>
 
       {/* Add Player Button */}
@@ -504,7 +493,9 @@ export default function SessionDetailPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="text-sm text-gray-400 block mb-2">选择已有玩家</label>
+            <label className="text-sm text-gray-400 block mb-2">
+              选择已有玩家
+            </label>
             <select
               value={addPlayerId}
               onChange={(e) => {
@@ -540,7 +531,9 @@ export default function SessionDetailPage() {
           />
 
           <div>
-            <label className="text-sm text-gray-400 block mb-2">买入金额</label>
+            <label className="text-sm text-gray-400 block mb-2">
+              买入金额
+            </label>
             <input
               type="number"
               inputMode="numeric"
@@ -575,9 +568,7 @@ export default function SessionDetailPage() {
             <span className="text-gray-400">差额</span>
             <span
               className={`font-mono font-bold ${
-                isBalanced
-                  ? 'text-green-400'
-                  : 'text-red-400'
+                isBalanced ? 'text-green-400' : 'text-red-400'
               }`}
             >
               {isBalanced ? '✓ 平衡' : diff}
@@ -604,35 +595,11 @@ export default function SessionDetailPage() {
       )}
 
       {/* Settlement Results */}
-      {settlements.length > 0 && (
-        <div className="bg-gray-800 rounded-xl p-4 mb-6">
-          <h2 className="font-semibold mb-3 text-green-400">
-            💰 结算单
-          </h2>
-          <div className="space-y-2">
-            {settlements.map((t, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0"
-              >
-                <span>
-                  <span className="text-red-400">{t.from}</span>
-                  {' → '}
-                  <span className="text-green-400">{t.to}</span>
-                </span>
-                <span className="font-mono font-bold">{t.amount}</span>
-              </div>
-            ))}
-          </div>
-
-          <button
-            onClick={handleCopy}
-            className="w-full mt-4 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-sm transition-colors"
-          >
-            {copied ? '✓ 已复制' : '📋 复制结算单'}
-          </button>
-        </div>
-      )}
+      <SettlementResult
+        ref={settlementRef}
+        settlements={settlements}
+        sessionNote={session.note}
+      />
 
       {/* Reopen */}
       {!isOpen && (
@@ -651,6 +618,17 @@ export default function SessionDetailPage() {
       >
         删除牌局
       </button>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmState.open}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() =>
+          setConfirmState((prev) => ({ ...prev, open: false }))
+        }
+        title={confirmState.title}
+        message={confirmState.message}
+      />
     </div>
   );
 }

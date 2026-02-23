@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🃏 德扑记账
 
-## Getting Started
+朋友局德州扑克记账工具，支持多人牌局记录、自动结算、排行榜和个人战绩统计。
 
-First, run the development server:
+## 功能
+
+- **牌局管理** — 创建牌局，添加玩家，记录买入/结算
+- **自动结算** — 零和校验 + 最小化转账算法，一键生成结算单
+- **分享** — 结算单可复制文本或生成图片分享到群
+- **排行榜** — 按总盈亏、场均、胜率、场次排序
+- **个人战绩** — 累计盈亏曲线、每场柱状图、月度汇总
+- **PWA** — 支持添加到手机主屏幕
+
+## 技术栈
+
+- [Next.js](https://nextjs.org) 16 (App Router)
+- [Supabase](https://supabase.com) (PostgreSQL + Auth)
+- [Tailwind CSS](https://tailwindcss.com) 4
+- [Recharts](https://recharts.org) (图表)
+- [Vitest](https://vitest.dev) (测试)
+
+## 本地开发
+
+1. 克隆项目并安装依赖：
+
+```bash
+npm install
+```
+
+2. 复制环境变量并填写 Supabase 配置：
+
+```bash
+cp .env.local.example .env.local
+```
+
+3. 在 Supabase 中执行 `supabase/schema.sql` 创建表结构。
+
+4. 启动开发服务器：
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 [http://localhost:3000](http://localhost:3000) 查看。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 命令
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `npm run dev` — 启动开发服务器
+- `npm run build` — 构建生产版本
+- `npm run lint` — ESLint 检查
+- `npm test` — 运行测试
+- `npm run test:watch` — 测试 (watch 模式)
 
-## Learn More
+## 部署
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+推荐使用 [Vercel](https://vercel.com) 部署，只需连接 GitHub 仓库并设置环境变量即可。

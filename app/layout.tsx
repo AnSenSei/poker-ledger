@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "@/components/BottomNav";
+import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "德扑记账",
@@ -29,8 +30,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="antialiased bg-gray-900 text-gray-100 min-h-screen">
-        <main className="pb-20">{children}</main>
-        <BottomNav />
+        <ToastProvider>
+          <main className="pb-20">{children}</main>
+          <BottomNav />
+        </ToastProvider>
       </body>
     </html>
   );

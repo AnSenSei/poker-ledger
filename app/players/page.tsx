@@ -2,29 +2,40 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-
-interface Player {
-  id: string;
-  name: string;
-  created_at: string;
-}
+import { Player } from '@/lib/types';
+import { useToast } from '@/components/Toast';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function PlayersPage() {
+  const { toast } = useToast();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [newName, setNewName] = useState('');
   const [adding, setAdding] = useState(false);
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
   useEffect(() => {
     fetchPlayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchPlayers() {
-    const { data } = await supabase.from('players').select('*').order('name');
-    setPlayers(data ?? []);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase.from('players').select('*').order('name');
+      if (error) throw error;
+      setPlayers(data ?? []);
+    } catch (err) {
+      toast('加载失败: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleRename(player: Player) {
@@ -33,48 +44,60 @@ export default function PlayersPage() {
       setEditingId(null);
       return;
     }
-    const { error } = await supabase
-      .from('players')
-      .update({ name: trimmed })
-      .eq('id', player.id);
-    if (error) {
-      alert('改名失败: ' + error.message);
-      return;
+    try {
+      const { error } = await supabase
+        .from('players')
+        .update({ name: trimmed })
+        .eq('id', player.id);
+      if (error) throw error;
+      setEditingId(null);
+      fetchPlayers();
+    } catch (err) {
+      toast('改名失败: ' + (err instanceof Error ? err.message : ''));
     }
-    setEditingId(null);
-    fetchPlayers();
   }
 
-  async function handleDelete(player: Player) {
-    if (!confirm(`确认删除玩家「${player.name}」？\n该玩家的所有历史记录也会被删除。`)) return;
-    const { error } = await supabase.from('players').delete().eq('id', player.id);
-    if (error) {
-      alert('删除失败: ' + error.message);
-      return;
-    }
-    // Clear localStorage if deleted player was selected
-    const saved = localStorage.getItem('poker-player-id');
-    if (saved === player.id) {
-      localStorage.removeItem('poker-player-id');
-    }
-    fetchPlayers();
+  function handleDelete(player: Player) {
+    setConfirmState({
+      open: true,
+      title: '删除玩家',
+      message: `确认删除玩家「${player.name}」？该玩家的所有历史记录也会被删除。`,
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, open: false }));
+        try {
+          const { error } = await supabase
+            .from('players')
+            .delete()
+            .eq('id', player.id);
+          if (error) throw error;
+          const saved = localStorage.getItem('poker-player-id');
+          if (saved === player.id) {
+            localStorage.removeItem('poker-player-id');
+          }
+          fetchPlayers();
+        } catch (err) {
+          toast('删除失败: ' + (err instanceof Error ? err.message : ''));
+        }
+      },
+    });
   }
 
   async function handleAdd() {
     const trimmed = newName.trim();
     if (!trimmed) return;
     setAdding(true);
-    const { error } = await supabase
-      .from('players')
-      .upsert({ name: trimmed }, { onConflict: 'name' });
-    if (error) {
-      alert('添加失败: ' + error.message);
+    try {
+      const { error } = await supabase
+        .from('players')
+        .upsert({ name: trimmed }, { onConflict: 'name' });
+      if (error) throw error;
+      setNewName('');
+      fetchPlayers();
+    } catch (err) {
+      toast('添加失败: ' + (err instanceof Error ? err.message : ''));
+    } finally {
       setAdding(false);
-      return;
     }
-    setNewName('');
-    setAdding(false);
-    fetchPlayers();
   }
 
   if (loading) {
@@ -159,6 +182,16 @@ export default function PlayersPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmState.open}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() =>
+          setConfirmState((prev) => ({ ...prev, open: false }))
+        }
+        title={confirmState.title}
+        message={confirmState.message}
+      />
     </div>
   );
 }

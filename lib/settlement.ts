@@ -33,14 +33,16 @@ export function calculateSettlement(entries: EntryWithPlayer[]): Transfer[] {
     .filter((p) => p.amount < 0)
     .sort((a, b) => a.amount - b.amount);
 
+  // Track remaining amounts without mutating the original pool objects
+  const winRemaining = winners.map((w) => w.amount);
+  const loseRemaining = losers.map((l) => Math.abs(l.amount));
+
   const transfers: Transfer[] = [];
   let i = 0;
   let j = 0;
 
   while (i < winners.length && j < losers.length) {
-    const winAmt = winners[i].amount;
-    const loseAmt = Math.abs(losers[j].amount);
-    const settle = Math.min(winAmt, loseAmt);
+    const settle = Math.min(winRemaining[i], loseRemaining[j]);
 
     transfers.push({
       from: losers[j].name,
@@ -50,11 +52,11 @@ export function calculateSettlement(entries: EntryWithPlayer[]): Transfer[] {
       amount: Math.round(settle * 100) / 100,
     });
 
-    winners[i].amount -= settle;
-    losers[j].amount += settle;
+    winRemaining[i] -= settle;
+    loseRemaining[j] -= settle;
 
-    if (Math.abs(winners[i].amount) < 0.01) i++;
-    if (Math.abs(losers[j].amount) < 0.01) j++;
+    if (winRemaining[i] < 0.01) i++;
+    if (loseRemaining[j] < 0.01) j++;
   }
 
   return transfers;
