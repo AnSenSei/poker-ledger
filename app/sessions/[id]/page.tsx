@@ -21,6 +21,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import EntryCard from '@/components/EntryCard';
 import SettlementResult from '@/components/SettlementResult';
 import { SessionDetailSkeleton } from '@/components/Skeleton';
+import { hapticMedium, hapticSuccess, hapticHeavy } from '@/lib/haptic';
 
 interface LocalEntry extends EntryWithPlayer {
   remaining: string;
@@ -39,6 +40,7 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [justSettled, setJustSettled] = useState(false);
   const settlementRef = useRef<HTMLDivElement>(null);
 
   // Edit note state
@@ -373,7 +375,13 @@ export default function SessionDetailPage() {
       setSession((prev) =>
         prev ? { ...prev, status: 'settled' } : prev
       );
+      setJustSettled(true);
+      hapticSuccess();
       toast('结算完成！', 'success');
+      // Scroll to settlement result
+      setTimeout(() => {
+        settlementRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
     } catch (err) {
       toast(
         '结算失败: ' + (err instanceof Error ? err.message : '未知错误')
@@ -527,15 +535,15 @@ export default function SessionDetailPage() {
       {isOpen && (
         <div className="flex gap-2 mb-6">
           <button
-            onClick={() => setShowAdd(true)}
-            className="flex-1 border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-xl py-3 text-gray-400 hover:text-gray-200 transition-colors"
+            onClick={() => { hapticMedium(); setShowAdd(true); }}
+            className="flex-1 border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-xl py-3 text-gray-400 hover:text-gray-200 transition-colors press-effect"
           >
             + 添加玩家
           </button>
           <button
-            onClick={handleImportLastSession}
+            onClick={() => { hapticMedium(); handleImportLastSession(); }}
             disabled={importing}
-            className="border-2 border-dashed border-gray-700 hover:border-green-600 rounded-xl px-4 py-3 text-gray-400 hover:text-green-400 transition-colors disabled:text-gray-600"
+            className="border-2 border-dashed border-gray-700 hover:border-green-600 rounded-xl px-4 py-3 text-gray-400 hover:text-green-400 transition-colors disabled:text-gray-600 press-effect"
           >
             {importing ? '导入中...' : '⏪ 上一场'}
           </button>
@@ -637,9 +645,9 @@ export default function SessionDetailPage() {
       {/* Settle Button */}
       {isOpen && entries.length >= 2 && (
         <button
-          onClick={handleSettle}
+          onClick={() => { hapticHeavy(); handleSettle(); }}
           disabled={!allFilled || !isBalanced || settling}
-          className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl py-4 text-lg font-medium transition-colors mb-6"
+          className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl py-4 text-lg font-medium transition-colors mb-6 press-effect"
         >
           {settling
             ? '结算中...'
@@ -652,16 +660,18 @@ export default function SessionDetailPage() {
       )}
 
       {/* Settlement Results */}
-      <SettlementResult
-        ref={settlementRef}
-        settlements={settlements}
-        sessionNote={session.note}
-        entries={!isOpen ? entries.map((e) => ({
-          name: e.players.name,
-          buyIn: Number(e.buy_in),
-          cashOut: Number(e.cash_out ?? 0),
-        })) : undefined}
-      />
+      <div className={justSettled ? 'animate-success-pop' : ''}>
+        <SettlementResult
+          ref={settlementRef}
+          settlements={settlements}
+          sessionNote={session.note}
+          entries={!isOpen ? entries.map((e) => ({
+            name: e.players.name,
+            buyIn: Number(e.buy_in),
+            cashOut: Number(e.cash_out ?? 0),
+          })) : undefined}
+        />
+      </div>
 
       {/* Reopen */}
       {!isOpen && (

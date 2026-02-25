@@ -21,6 +21,10 @@ interface Props {
   onRemove: (entryId: string) => void;
 }
 
+function selectOnFocus(e: React.FocusEvent<HTMLInputElement>) {
+  e.target.select();
+}
+
 export default function EntryCard({
   entry,
   isOpen,
@@ -76,11 +80,12 @@ export default function EntryCard({
               inputMode="numeric"
               pattern="[0-9]*"
               value={entry.buy_in}
+              onFocus={selectOnFocus}
               onChange={(e) => onBuyInChange(entry.id, e.target.value)}
               onBlur={(e) =>
                 onBuyInSave(entry.id, Number(e.target.value) || 0)
               }
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500"
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500 focus:bg-gray-600/50 transition-colors"
             />
           ) : (
             <div className="text-center py-2 font-mono">
@@ -98,6 +103,7 @@ export default function EntryCard({
               inputMode="numeric"
               pattern="[0-9]*"
               value={entry.remaining}
+              onFocus={selectOnFocus}
               onChange={(e) =>
                 onRemainingChange(entry.id, e.target.value)
               }
@@ -105,7 +111,7 @@ export default function EntryCard({
                 onCashOutSave(entry.id, entry.remaining, entry.early)
               }
               placeholder="0"
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500"
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500 focus:bg-gray-600/50 transition-colors"
             />
           ) : (
             <div className="text-center py-2 font-mono">
@@ -123,6 +129,7 @@ export default function EntryCard({
               inputMode="numeric"
               pattern="[0-9]*"
               value={entry.early}
+              onFocus={selectOnFocus}
               onChange={(e) =>
                 onEarlyChange(entry.id, e.target.value)
               }
@@ -130,7 +137,7 @@ export default function EntryCard({
                 onCashOutSave(entry.id, entry.remaining, entry.early)
               }
               placeholder="0"
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500"
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-center focus:outline-none focus:border-green-500 focus:bg-gray-600/50 transition-colors"
             />
           ) : (
             <div className="text-center py-2 font-mono">

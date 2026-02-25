@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { hapticLight } from '@/lib/haptic';
+
+const DISMISS_THRESHOLD = 100;
 
 interface Props {
   open: boolean;
@@ -10,9 +13,15 @@ interface Props {
 }
 
 export default function BottomSheet({ open, onClose, title, children }: Props) {
+  const [dragY, setDragY] = useState(0);
+  const startY = useRef(0);
+  const dragging = useRef(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
+      setDragY(0);
     } else {
       document.body.style.overflow = '';
     }
@@ -21,6 +30,31 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
     };
   }, [open]);
 
+  function handleTouchStart(e: React.TouchEvent) {
+    // Only start drag if sheet is scrolled to top
+    if (sheetRef.current && sheetRef.current.scrollTop > 0) return;
+    startY.current = e.touches[0].clientY;
+    dragging.current = true;
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (!dragging.current) return;
+    const dy = e.touches[0].clientY - startY.current;
+    if (dy > 0) {
+      setDragY(dy);
+    }
+  }
+
+  function handleTouchEnd() {
+    if (!dragging.current) return;
+    dragging.current = false;
+    if (dragY > DISMISS_THRESHOLD) {
+      hapticLight();
+      onClose();
+    }
+    setDragY(0);
+  }
+
   if (!open) return null;
 
   return (
@@ -28,12 +62,24 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 animate-fade-in"
+        style={{ opacity: dragY > 0 ? Math.max(0.2, 1 - dragY / 300) : undefined }}
         onClick={onClose}
       />
       {/* Sheet */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gray-800 rounded-t-2xl max-h-[85vh] overflow-y-auto animate-slide-up safe-area-bottom">
+      <div
+        ref={sheetRef}
+        className="absolute bottom-0 left-0 right-0 bg-gray-800 rounded-t-2xl max-h-[85vh] overflow-y-auto safe-area-bottom"
+        style={{
+          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+          transition: dragging.current ? 'none' : 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+          animation: dragY === 0 && !dragging.current ? 'slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-2 sticky top-0">
+        <div className="flex justify-center pt-3 pb-2 sticky top-0 cursor-grab">
           <div className="w-10 h-1 bg-gray-600 rounded-full" />
         </div>
         {title && (

@@ -141,14 +141,14 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
         <div className="flex gap-2 mt-3 mb-6">
           <button
             onClick={handleCopy}
-            className="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-sm transition-colors"
+            className="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-sm transition-colors press-effect"
           >
             {copied ? '✓ 已复制' : '📋 复制'}
           </button>
           <button
             onClick={handleShareImage}
             disabled={sharing}
-            className="flex-1 bg-green-600 hover:bg-green-700 rounded-lg py-2 text-sm transition-colors disabled:bg-gray-700"
+            className="flex-1 bg-green-600 hover:bg-green-700 rounded-lg py-2 text-sm transition-colors disabled:bg-gray-700 press-effect"
           >
             {sharing ? '生成中...' : '📷 分享图片'}
           </button>
