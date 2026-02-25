@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/Toast';
 import { LeaderboardSkeleton } from '@/components/Skeleton';
+import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import PullIndicator from '@/components/PullIndicator';
 
 interface EntryRow {
   player_id: string;
@@ -35,6 +37,10 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>('totalProfit');
   const [period, setPeriod] = useState<Period>('all');
+
+  const { refreshing, pullDistance } = usePullToRefresh(
+    async () => { await fetchLeaderboard(); }
+  );
 
   useEffect(() => {
     fetchLeaderboard();
@@ -123,6 +129,9 @@ export default function LeaderboardPage() {
 
   return (
     <div className="max-w-lg mx-auto p-4 pb-8">
+      {/* Pull to refresh */}
+      <PullIndicator pullDistance={pullDistance} refreshing={refreshing} />
+
       {/* Header */}
       <div className="text-center pt-6 pb-6">
         <h1 className="text-2xl font-bold">🏆 排行榜</h1>

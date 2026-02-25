@@ -14,7 +14,24 @@ interface EntryRow {
   id: string;
   buy_in: number;
   cash_out: number | null;
+  session_id: string;
   sessions: Session;
+}
+
+interface OpponentEntry {
+  session_id: string;
+  player_id: string;
+  buy_in: number;
+  cash_out: number;
+  players: { id: string; name: string };
+}
+
+interface OpponentStat {
+  name: string;
+  id: string;
+  together: number;       // sessions together
+  myWins: number;         // sessions where I profit > 0
+  myAvgProfit: number;    // my avg profit when playing with them
 }
 
 export default function StatsPage() {
@@ -24,6 +41,7 @@ export default function StatsPage() {
 
   const [player, setPlayer] = useState<Player | null>(null);
   const [entries, setEntries] = useState<EntryRow[]>([]);
+  const [opponentEntries, setOpponentEntries] = useState<OpponentEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'all' | '30d' | '90d'>('all');
 
@@ -35,7 +53,7 @@ export default function StatsPage() {
           supabase.from('players').select('*').eq('id', playerId).single(),
           supabase
             .from('entries')
-            .select('id, buy_in, cash_out, sessions(*)')
+            .select('id, buy_in, cash_out, session_id, sessions(*)')
             .eq('player_id', playerId)
             .not('cash_out', 'is', null)
             .order('created_at', { ascending: true }),
@@ -43,7 +61,20 @@ export default function StatsPage() {
         if (cancelled) return;
         if (playerRes.error) throw playerRes.error;
         setPlayer(playerRes.data);
-        setEntries((entriesRes.data as EntryRow[] | null) ?? []);
+        const myEntries = (entriesRes.data as EntryRow[] | null) ?? [];
+        setEntries(myEntries);
+
+        // Fetch opponent data for sessions this player was in
+        if (myEntries.length > 0) {
+          const sessionIds = myEntries.map((e) => e.session_id);
+          const { data: oppData } = await supabase
+            .from('entries')
+            .select('session_id, player_id, buy_in, cash_out, players(id, name)')
+            .in('session_id', sessionIds)
+            .neq('player_id', playerId)
+            .not('cash_out', 'is', null);
+          if (!cancelled) setOpponentEntries((oppData as unknown as OpponentEntry[]) ?? []);
+        }
       } catch (err) {
         if (!cancelled) toast('加载失败: ' + (err instanceof Error ? err.message : ''));
       } finally {
@@ -88,6 +119,67 @@ export default function StatsPage() {
   const maxLoss = profits.length > 0 ? Math.min(...profits) : 0;
   const winSessions = profits.filter((p) => p > 0).length;
   const winRate = totalSessions > 0 ? Math.round((winSessions / totalSessions) * 100) : 0;
+
+  // ─── Streaks ───
+  let currentStreak = 0;
+  let currentStreakType: 'win' | 'loss' | 'none' = 'none';
+  let maxWinStreak = 0;
+  let maxLossStreak = 0;
+  {
+    let ws = 0, ls = 0;
+    for (const p of profits) {
+      if (p > 0) { ws++; ls = 0; }
+      else if (p < 0) { ls++; ws = 0; }
+      else { ws = 0; ls = 0; }
+      maxWinStreak = Math.max(maxWinStreak, ws);
+      maxLossStreak = Math.max(maxLossStreak, ls);
+    }
+    // current streak from latest
+    for (let i = profits.length - 1; i >= 0; i--) {
+      if (i === profits.length - 1) {
+        if (profits[i] > 0) { currentStreak = 1; currentStreakType = 'win'; }
+        else if (profits[i] < 0) { currentStreak = 1; currentStreakType = 'loss'; }
+        else break;
+      } else {
+        if (currentStreakType === 'win' && profits[i] > 0) currentStreak++;
+        else if (currentStreakType === 'loss' && profits[i] < 0) currentStreak++;
+        else break;
+      }
+    }
+  }
+
+  // ─── Opponent Stats ───
+  const opponentStats: OpponentStat[] = (() => {
+    // Build a map: sessionId -> my profit
+    const myProfitBySession = new Map<string, number>();
+    for (const e of settledEntries) {
+      myProfitBySession.set(e.session_id, Number(e.cash_out!) - Number(e.buy_in));
+    }
+    // Group opponent entries by opponent
+    const oppMap = new Map<string, { name: string; profits: number[] }>();
+    for (const oe of opponentEntries) {
+      if (!myProfitBySession.has(oe.session_id)) continue;
+      const opp = oe.players;
+      if (!oppMap.has(opp.id)) {
+        oppMap.set(opp.id, { name: opp.name, profits: [] });
+      }
+      oppMap.get(opp.id)!.profits.push(myProfitBySession.get(oe.session_id)!);
+    }
+    const result: OpponentStat[] = [];
+    for (const [id, { name, profits: myProfits }] of oppMap) {
+      const together = myProfits.length;
+      const myWins = myProfits.filter((p) => p > 0).length;
+      const total = myProfits.reduce((s, p) => s + p, 0);
+      result.push({
+        name,
+        id,
+        together,
+        myWins,
+        myAvgProfit: together > 0 ? Math.round(total / together) : 0,
+      });
+    }
+    return result.sort((a, b) => b.together - a.together);
+  })();
 
   // ─── Chart Data ───
   const chartData = settledEntries.reduce<{ label: string; cumulative: number }[]>(
@@ -207,6 +299,32 @@ export default function StatsPage() {
         </div>
       </div>
 
+      {/* Streak Stats */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="bg-gray-800 rounded-xl p-3 text-center">
+          <div className={`text-lg font-bold ${
+            currentStreakType === 'win' ? 'text-green-400' :
+            currentStreakType === 'loss' ? 'text-red-400' : 'text-gray-400'
+          }`}>
+            {currentStreak > 0
+              ? `${currentStreakType === 'win' ? '🔥' : '🪓'} ${currentStreak}`
+              : '-'}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            {currentStreakType === 'win' ? '当前连胜' :
+             currentStreakType === 'loss' ? '当前连败' : '当前'}
+          </div>
+        </div>
+        <div className="bg-gray-800 rounded-xl p-3 text-center">
+          <div className="text-lg font-bold text-green-400">🔥 {maxWinStreak}</div>
+          <div className="text-xs text-gray-500 mt-1">最长连胜</div>
+        </div>
+        <div className="bg-gray-800 rounded-xl p-3 text-center">
+          <div className="text-lg font-bold text-red-400">🪓 {maxLossStreak}</div>
+          <div className="text-xs text-gray-500 mt-1">最长连败</div>
+        </div>
+      </div>
+
       {/* Cumulative Profit Line Chart */}
       <div className="bg-gray-800 rounded-xl p-4 mb-6">
         <h2 className="font-semibold mb-3 text-gray-300">累计盈亏曲线</h2>
@@ -257,6 +375,45 @@ export default function StatsPage() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Opponent Stats */}
+      {opponentStats.length > 0 && (
+        <div className="bg-gray-800 rounded-xl p-4 mb-6">
+          <h2 className="font-semibold mb-3 text-gray-300">对手战绩</h2>
+          <div className="space-y-2">
+            {opponentStats.map((opp) => {
+              const oppWinRate = opp.together > 0
+                ? Math.round((opp.myWins / opp.together) * 100)
+                : 0;
+              return (
+                <button
+                  key={opp.id}
+                  onClick={() => router.push(`/stats/${opp.id}`)}
+                  className="w-full flex items-center justify-between py-2 border-b border-gray-700 last:border-0 text-left active:bg-gray-700/50 rounded transition-colors"
+                >
+                  <div>
+                    <span className="text-gray-200">{opp.name}</span>
+                    <span className="text-gray-600 text-xs ml-2">{opp.together}场</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs ${
+                      oppWinRate >= 50 ? 'text-green-400' : 'text-red-400'
+                    }`}>
+                      胜率{oppWinRate}%
+                    </span>
+                    <span className={`font-mono text-sm font-bold ${
+                      opp.myAvgProfit > 0 ? 'text-green-400' :
+                      opp.myAvgProfit < 0 ? 'text-red-400' : 'text-gray-400'
+                    }`}>
+                      {opp.myAvgProfit > 0 ? '+' : ''}{opp.myAvgProfit}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

@@ -38,6 +38,7 @@ export default function SessionDetailPage() {
   const [settlements, setSettlements] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState(false);
+  const [importing, setImporting] = useState(false);
   const settlementRef = useRef<HTMLDivElement>(null);
 
   // Edit note state
@@ -119,6 +120,56 @@ export default function SessionDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // ─── Import Last Session Players ───
+  async function handleImportLastSession() {
+    setImporting(true);
+    try {
+      // Find the most recent OTHER session
+      const { data: prevSessions, error: sessErr } = await supabase
+        .from('sessions')
+        .select('id')
+        .neq('id', id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (sessErr) throw sessErr;
+      if (!prevSessions || prevSessions.length === 0) {
+        toast('没有找到历史牌局', 'info');
+        return;
+      }
+      const prevId = prevSessions[0].id;
+      const { data: prevEntries, error: entErr } = await supabase
+        .from('entries')
+        .select('player_id, buy_in')
+        .eq('session_id', prevId);
+      if (entErr) throw entErr;
+      if (!prevEntries || prevEntries.length === 0) {
+        toast('上一场没有玩家', 'info');
+        return;
+      }
+      // Filter out players already in this session
+      const existingIds = new Set(entries.map((e) => e.player_id));
+      const toAdd = prevEntries.filter((e) => !existingIds.has(e.player_id));
+      if (toAdd.length === 0) {
+        toast('上一场的玩家已全部添加', 'info');
+        return;
+      }
+      const { error: insErr } = await supabase.from('entries').insert(
+        toAdd.map((e) => ({
+          session_id: id,
+          player_id: e.player_id,
+          buy_in: Number(e.buy_in),
+        }))
+      );
+      if (insErr) throw insErr;
+      toast(`已导入 ${toAdd.length} 位玩家`, 'success');
+      fetchData();
+    } catch (err) {
+      toast('导入失败: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setImporting(false);
+    }
+  }
 
   // ─── Edit Note ───
   async function handleSaveNote() {
@@ -472,14 +523,23 @@ export default function SessionDetailPage() {
         ))}
       </div>
 
-      {/* Add Player Button */}
+      {/* Add Player Buttons */}
       {isOpen && (
-        <button
-          onClick={() => setShowAdd(true)}
-          className="w-full border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-xl py-3 text-gray-400 hover:text-gray-200 transition-colors mb-6"
-        >
-          + 添加玩家
-        </button>
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex-1 border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-xl py-3 text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            + 添加玩家
+          </button>
+          <button
+            onClick={handleImportLastSession}
+            disabled={importing}
+            className="border-2 border-dashed border-gray-700 hover:border-green-600 rounded-xl px-4 py-3 text-gray-400 hover:text-green-400 transition-colors disabled:text-gray-600"
+          >
+            {importing ? '导入中...' : '⏪ 上一场'}
+          </button>
+        </div>
       )}
 
       {/* Add Player Bottom Sheet */}

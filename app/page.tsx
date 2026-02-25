@@ -9,6 +9,8 @@ import { useToast } from '@/components/Toast';
 import BottomSheet from '@/components/BottomSheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { SessionListSkeleton } from '@/components/Skeleton';
+import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import PullIndicator from '@/components/PullIndicator';
 
 interface SessionSummary {
   playerCount: number;
@@ -31,6 +33,10 @@ export default function HomePage() {
   const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [search, setSearch] = useState('');
+
+  const { refreshing, pullDistance } = usePullToRefresh(
+    async () => { await fetchData(); }
+  );
 
   // Confirm dialog
   const [confirmState, setConfirmState] = useState<{
@@ -190,6 +196,9 @@ export default function HomePage() {
 
   return (
     <div className="max-w-lg mx-auto p-4 pb-8">
+      {/* Pull to refresh */}
+      <PullIndicator pullDistance={pullDistance} refreshing={refreshing} />
+
       {/* Header */}
       <div className="text-center pt-6 pb-8">
         <h1 className="text-3xl font-bold">🃏 德扑记账</h1>
