@@ -20,6 +20,7 @@ import BottomSheet from '@/components/BottomSheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import EntryCard from '@/components/EntryCard';
 import SettlementResult from '@/components/SettlementResult';
+import { SessionDetailSkeleton } from '@/components/Skeleton';
 
 interface LocalEntry extends EntryWithPlayer {
   remaining: string;
@@ -390,11 +391,7 @@ export default function SessionDetailPage() {
   );
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    );
+    return <SessionDetailSkeleton />;
   }
 
   if (!session) {
@@ -599,6 +596,11 @@ export default function SessionDetailPage() {
         ref={settlementRef}
         settlements={settlements}
         sessionNote={session.note}
+        entries={!isOpen ? entries.map((e) => ({
+          name: e.players.name,
+          buyIn: Number(e.buy_in),
+          cashOut: Number(e.cash_out ?? 0),
+        })) : undefined}
       />
 
       {/* Reopen */}

@@ -5,13 +5,20 @@ import { Transfer } from '@/lib/types';
 import { formatSettlementText } from '@/lib/settlement';
 import { useToast } from './Toast';
 
+interface PlayerProfit {
+  name: string;
+  buyIn: number;
+  cashOut: number;
+}
+
 interface Props {
   settlements: Transfer[];
   sessionNote?: string | null;
+  entries?: PlayerProfit[];
 }
 
 const SettlementResult = forwardRef<HTMLDivElement, Props>(
-  function SettlementResult({ settlements, sessionNote }, ref) {
+  function SettlementResult({ settlements, sessionNote, entries }, ref) {
     const [copied, setCopied] = useState(false);
     const [sharing, setSharing] = useState(false);
     const { toast } = useToast();
@@ -69,6 +76,12 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
 
     if (settlements.length === 0) return null;
 
+    const profitList = entries
+      ? [...entries]
+          .map((e) => ({ name: e.name, net: e.cashOut - e.buyIn }))
+          .sort((a, b) => b.net - a.net)
+      : [];
+
     return (
       <div>
         <div ref={ref} className="bg-gray-800 rounded-xl p-4">
@@ -78,7 +91,37 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
           {sessionNote && (
             <p className="text-gray-500 text-sm mb-3">{sessionNote}</p>
           )}
+
+          {/* Per-player profit summary */}
+          {profitList.length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs text-gray-500 mb-2">每人盈亏</div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {profitList.map((p) => (
+                  <span key={p.name} className="text-sm">
+                    <span className="text-gray-300">{p.name}</span>{' '}
+                    <span
+                      className={`font-mono font-bold ${
+                        p.net > 0
+                          ? 'text-green-400'
+                          : p.net < 0
+                          ? 'text-red-400'
+                          : 'text-gray-400'
+                      }`}
+                    >
+                      {p.net > 0 ? '+' : ''}{p.net}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Transfer list */}
           <div className="space-y-2">
+            {profitList.length > 0 && (
+              <div className="text-xs text-gray-500 mb-1">转账明细</div>
+            )}
             {settlements.map((t, i) => (
               <div
                 key={i}

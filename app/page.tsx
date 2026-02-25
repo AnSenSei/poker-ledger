@@ -8,6 +8,12 @@ import { formatDateShort } from '@/lib/utils';
 import { useToast } from '@/components/Toast';
 import BottomSheet from '@/components/BottomSheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { SessionListSkeleton } from '@/components/Skeleton';
+
+interface SessionSummary {
+  playerCount: number;
+  totalBuyIn: number;
+}
 
 const PAGE_SIZE = 20;
 
@@ -16,6 +22,7 @@ export default function HomePage() {
   const { toast } = useToast();
   const [players, setPlayers] = useState<Player[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionSummaries, setSessionSummaries] = useState<Record<string, SessionSummary>>({});
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
@@ -23,6 +30,7 @@ export default function HomePage() {
   const [showManage, setShowManage] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [search, setSearch] = useState('');
 
   // Confirm dialog
   const [confirmState, setConfirmState] = useState<{
@@ -54,11 +62,35 @@ export default function HomePage() {
       const data = sessionsRes.data ?? [];
       setHasMore(data.length > PAGE_SIZE);
       setPlayers(playersRes.data ?? []);
-      setSessions(data.slice(0, PAGE_SIZE));
+      const sliced = data.slice(0, PAGE_SIZE);
+      setSessions(sliced);
+      fetchSummaries(sliced.map((s) => s.id));
     } catch (err) {
       toast('加载失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchSummaries(sessionIds: string[]) {
+    if (sessionIds.length === 0) return;
+    try {
+      const { data, error } = await supabase
+        .from('entries')
+        .select('session_id, buy_in')
+        .in('session_id', sessionIds);
+      if (error) throw error;
+      const map: Record<string, SessionSummary> = {};
+      for (const e of data ?? []) {
+        if (!map[e.session_id]) {
+          map[e.session_id] = { playerCount: 0, totalBuyIn: 0 };
+        }
+        map[e.session_id].playerCount += 1;
+        map[e.session_id].totalBuyIn += Number(e.buy_in);
+      }
+      setSessionSummaries((prev) => ({ ...prev, ...map }));
+    } catch {
+      // non-critical, ignore
     }
   }
 
@@ -76,7 +108,9 @@ export default function HomePage() {
       if (error) throw error;
       const rows = data ?? [];
       setHasMore(rows.length > PAGE_SIZE);
-      setSessions((prev) => [...prev, ...rows.slice(0, PAGE_SIZE)]);
+      const sliced = rows.slice(0, PAGE_SIZE);
+      setSessions((prev) => [...prev, ...sliced]);
+      fetchSummaries(sliced.map((s) => s.id));
     } catch {
       toast('加载更多失败');
     } finally {
@@ -133,10 +167,23 @@ export default function HomePage() {
     }
   }
 
+  // Search filter
+  const searchTerm = search.trim().toLowerCase();
+  const filteredSessions = searchTerm
+    ? sessions.filter((s) =>
+        (s.note || '').toLowerCase().includes(searchTerm) ||
+        formatDateShort(s.created_at).includes(searchTerm)
+      )
+    : sessions;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
+      <div className="max-w-lg mx-auto p-4 pb-8">
+        <div className="text-center pt-6 pb-8">
+          <h1 className="text-3xl font-bold">🃏 德扑记账</h1>
+          <p className="text-gray-400 mt-1 text-sm">朋友局记账工具</p>
+        </div>
+        <SessionListSkeleton count={4} />
       </div>
     );
   }
@@ -199,34 +246,53 @@ export default function HomePage() {
         </button>
       </div>
 
+      {/* Search */}
+      <div className="mb-6">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 搜索牌局..."
+          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-green-500 placeholder-gray-500"
+        />
+      </div>
+
       {/* Unsettled Sessions */}
-      {sessions.filter((s) => s.status === 'open').length > 0 && (
+      {filteredSessions.filter((s) => s.status === 'open').length > 0 && (
         <div className="mb-6">
           <h2 className="text-lg font-semibold mb-3 text-yellow-400">⚠️ 未结算</h2>
           <div className="space-y-2">
-            {sessions
+            {filteredSessions
               .filter((s) => s.status === 'open')
-              .map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => router.push(`/sessions/${s.id}`)}
-                  className="w-full bg-yellow-900/20 border border-yellow-800/50 hover:bg-yellow-900/30 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-yellow-900/40"
-                >
-                  <div>
-                    <span className="text-gray-200">
-                      {s.note || formatDateShort(s.created_at)}
-                    </span>
-                    {s.note && (
-                      <span className="text-gray-500 text-sm ml-2">
-                        {formatDateShort(s.created_at)}
+              .map((s) => {
+                const summary = sessionSummaries[s.id];
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => router.push(`/sessions/${s.id}`)}
+                    className="w-full bg-yellow-900/20 border border-yellow-800/50 hover:bg-yellow-900/30 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-yellow-900/40"
+                  >
+                    <div>
+                      <span className="text-gray-200">
+                        {s.note || formatDateShort(s.created_at)}
                       </span>
-                    )}
-                  </div>
-                  <span className="text-xs px-2 py-1 rounded-full bg-yellow-900/50 text-yellow-400">
-                    进行中
-                  </span>
-                </button>
-              ))}
+                      {s.note && (
+                        <span className="text-gray-500 text-sm ml-2">
+                          {formatDateShort(s.created_at)}
+                        </span>
+                      )}
+                      {summary && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          {summary.playerCount}人 · 总买入{summary.totalBuyIn}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs px-2 py-1 rounded-full bg-yellow-900/50 text-yellow-400">
+                      进行中
+                    </span>
+                  </button>
+                );
+              })}
           </div>
         </div>
       )}
@@ -234,33 +300,43 @@ export default function HomePage() {
       {/* Settled Sessions */}
       <div>
         <h2 className="text-lg font-semibold mb-3 text-gray-300">历史牌局</h2>
-        {sessions.filter((s) => s.status === 'settled').length === 0 ? (
-          <p className="text-gray-500 text-center py-8">还没有已结算的牌局</p>
+        {filteredSessions.filter((s) => s.status === 'settled').length === 0 ? (
+          <p className="text-gray-500 text-center py-8">
+            {searchTerm ? '没有匹配的牌局' : '还没有已结算的牌局'}
+          </p>
         ) : (
           <div className="space-y-2">
-            {sessions
+            {filteredSessions
               .filter((s) => s.status === 'settled')
-              .map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => router.push(`/sessions/${s.id}`)}
-                  className="w-full bg-gray-800 hover:bg-gray-750 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-gray-700"
-                >
-                  <div>
-                    <span className="text-gray-200">
-                      {s.note || formatDateShort(s.created_at)}
-                    </span>
-                    {s.note && (
-                      <span className="text-gray-500 text-sm ml-2">
-                        {formatDateShort(s.created_at)}
+              .map((s) => {
+                const summary = sessionSummaries[s.id];
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => router.push(`/sessions/${s.id}`)}
+                    className="w-full bg-gray-800 hover:bg-gray-750 rounded-xl px-4 py-3 flex items-center justify-between text-left transition-colors active:bg-gray-700"
+                  >
+                    <div>
+                      <span className="text-gray-200">
+                        {s.note || formatDateShort(s.created_at)}
                       </span>
-                    )}
-                  </div>
-                  <span className="text-xs px-2 py-1 rounded-full bg-green-900/50 text-green-400">
-                    已结算
-                  </span>
-                </button>
-              ))}
+                      {s.note && (
+                        <span className="text-gray-500 text-sm ml-2">
+                          {formatDateShort(s.created_at)}
+                        </span>
+                      )}
+                      {summary && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          {summary.playerCount}人 · 总买入{summary.totalBuyIn}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs px-2 py-1 rounded-full bg-green-900/50 text-green-400">
+                      已结算
+                    </span>
+                  </button>
+                );
+              })}
           </div>
         )}
 

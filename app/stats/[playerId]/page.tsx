@@ -8,6 +8,7 @@ import { formatDateShort } from '@/lib/utils';
 import { useToast } from '@/components/Toast';
 import ProfitChart from '@/components/ProfitChart';
 import SessionChart from '@/components/SessionChart';
+import { StatsSkeleton } from '@/components/Skeleton';
 
 interface EntryRow {
   id: string;
@@ -54,11 +55,7 @@ export default function StatsPage() {
   }, [playerId, toast]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    );
+    return <StatsSkeleton />;
   }
 
   if (!player) {

@@ -4,6 +4,15 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/Toast';
+import { LeaderboardSkeleton } from '@/components/Skeleton';
+
+interface EntryRow {
+  player_id: string;
+  buy_in: number;
+  cash_out: number;
+  players: { id: string; name: string };
+  sessions: { created_at: string };
+}
 
 interface PlayerStats {
   id: string;
@@ -17,13 +26,15 @@ interface PlayerStats {
 }
 
 type SortKey = 'totalProfit' | 'winRate' | 'totalSessions' | 'avgProfit';
+type Period = 'all' | '30d' | '90d';
 
 export default function LeaderboardPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [stats, setStats] = useState<PlayerStats[]>([]);
+  const [allEntries, setAllEntries] = useState<EntryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>('totalProfit');
+  const [period, setPeriod] = useState<Period>('all');
 
   useEffect(() => {
     fetchLeaderboard();
@@ -34,34 +45,42 @@ export default function LeaderboardPage() {
     try {
       const { data: entries, error } = await supabase
         .from('entries')
-        .select('player_id, buy_in, cash_out, players(id, name)')
+        .select('player_id, buy_in, cash_out, players(id, name), sessions(created_at)')
         .not('cash_out', 'is', null);
 
       if (error) throw error;
-      if (!entries) {
-        setLoading(false);
-        return;
-      }
+      setAllEntries((entries as unknown as EntryRow[]) ?? []);
+    } catch (err) {
+      toast('加载排行榜失败: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-    // Group by player
+  // Compute stats from filtered entries
+  const filteredEntries = allEntries.filter((e) => {
+    if (period === 'all') return true;
+    const days = period === '30d' ? 30 : 90;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return new Date(e.sessions.created_at) >= cutoff;
+  });
+
+  const stats: PlayerStats[] = (() => {
     const playerMap = new Map<string, { name: string; profits: number[] }>();
-
-    for (const e of entries) {
-      const player = e.players as unknown as { id: string; name: string };
+    for (const e of filteredEntries) {
+      const player = e.players;
       const net = Number(e.cash_out) - Number(e.buy_in);
-
       if (!playerMap.has(player.id)) {
         playerMap.set(player.id, { name: player.name, profits: [] });
       }
       playerMap.get(player.id)!.profits.push(net);
     }
-
     const result: PlayerStats[] = [];
     for (const [id, { name, profits }] of playerMap) {
       const totalProfit = profits.reduce((s, p) => s + p, 0);
       const totalSessions = profits.length;
       const wins = profits.filter((p) => p > 0).length;
-
       result.push({
         id,
         name,
@@ -73,14 +92,8 @@ export default function LeaderboardPage() {
         maxLoss: profits.length > 0 ? Math.min(...profits) : 0,
       });
     }
-
-      setStats(result);
-    } catch (err) {
-      toast('加载排行榜失败: ' + (err instanceof Error ? err.message : ''));
-    } finally {
-      setLoading(false);
-    }
-  }
+    return result;
+  })();
 
   const sorted = [...stats].sort((a, b) => {
     if (sortBy === 'totalProfit') return b.totalProfit - a.totalProfit;
@@ -99,8 +112,11 @@ export default function LeaderboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
+      <div className="max-w-lg mx-auto p-4 pb-8">
+        <div className="text-center pt-6 pb-6">
+          <h1 className="text-2xl font-bold">🏆 排行榜</h1>
+        </div>
+        <LeaderboardSkeleton />
       </div>
     );
   }
@@ -110,6 +126,23 @@ export default function LeaderboardPage() {
       {/* Header */}
       <div className="text-center pt-6 pb-6">
         <h1 className="text-2xl font-bold">🏆 排行榜</h1>
+      </div>
+
+      {/* Time Period Filter */}
+      <div className="flex gap-2 mb-4">
+        {([['all', '全部'], ['30d', '近30天'], ['90d', '近90天']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setPeriod(key)}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              period === key
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:text-white'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Sort Tabs */}
