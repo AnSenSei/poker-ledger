@@ -339,25 +339,10 @@ export default function StatsPage() {
       <>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-3 mb-6">
         <div className="bg-gray-800 rounded-xl p-3 text-center">
           <div className="text-2xl font-bold">{totalSessions}</div>
           <div className="text-xs text-gray-500 mt-1">总场次</div>
-        </div>
-        <div className="bg-gray-800 rounded-xl p-3 text-center">
-          <div
-            className={`text-2xl font-bold font-mono ${
-              totalProfit > 0
-                ? 'text-green-400'
-                : totalProfit < 0
-                ? 'text-red-400'
-                : 'text-gray-400'
-            }`}
-          >
-            {totalProfit > 0 ? '+' : ''}
-            {totalProfit}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">总盈亏</div>
         </div>
         <div className="bg-gray-800 rounded-xl p-3 text-center">
           <div
