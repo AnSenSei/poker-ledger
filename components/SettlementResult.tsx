@@ -1,9 +1,7 @@
 'use client';
 
-import { forwardRef, useState } from 'react';
+import { forwardRef } from 'react';
 import { Transfer } from '@/lib/types';
-import { formatSettlementText } from '@/lib/settlement';
-import { useToast } from './Toast';
 
 interface PlayerProfit {
   name: string;
@@ -19,65 +17,6 @@ interface Props {
 
 const SettlementResult = forwardRef<HTMLDivElement, Props>(
   function SettlementResult({ settlements, sessionNote, entries }, ref) {
-    const [copied, setCopied] = useState(false);
-    const [sharing, setSharing] = useState(false);
-    const { toast } = useToast();
-
-    async function handleCopy() {
-      const text = formatSettlementText(settlements, sessionNote);
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        toast('已复制到剪贴板', 'success');
-        setTimeout(() => setCopied(false), 2000);
-      } catch {
-        toast('复制失败，请手动复制');
-      }
-    }
-
-    async function handleShareImage() {
-      const el = (ref as React.RefObject<HTMLDivElement>)?.current;
-      if (!el) return;
-      setSharing(true);
-      try {
-        const html2canvas = (await import('html2canvas')).default;
-        const canvas = await html2canvas(el, {
-          backgroundColor: '#1f2937',
-          scale: 2,
-        });
-        const blob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob(resolve, 'image/png')
-        );
-        if (!blob) throw new Error('Failed to create image');
-
-        if (
-          navigator.share &&
-          navigator.canShare?.({
-            files: [
-              new File([blob], 'settlement.png', { type: 'image/png' }),
-            ],
-          })
-        ) {
-          await navigator.share({
-            files: [
-              new File([blob], '结算单.png', { type: 'image/png' }),
-            ],
-          });
-        } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = '结算单.png';
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-      } catch (err) {
-        console.error(err);
-        toast('分享失败');
-      }
-      setSharing(false);
-    }
-
     if (settlements.length === 0) return null;
 
     const profitList = entries
@@ -142,21 +81,6 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
           </div>
         </div>
 
-        <div className="flex gap-2 mt-3 mb-6">
-          <button
-            onClick={handleCopy}
-            className="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-sm transition-colors press-effect"
-          >
-            {copied ? '✓ 已复制' : '📋 复制'}
-          </button>
-          <button
-            onClick={handleShareImage}
-            disabled={sharing}
-            className="flex-1 bg-green-600 hover:bg-green-700 rounded-lg py-2 text-sm transition-colors disabled:bg-gray-700 press-effect"
-          >
-            {sharing ? '生成中...' : '📷 分享图片'}
-          </button>
-        </div>
       </div>
     );
   }

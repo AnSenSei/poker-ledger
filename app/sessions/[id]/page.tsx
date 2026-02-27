@@ -259,22 +259,30 @@ export default function SessionDetailPage() {
   );
 
   // ─── Update Remaining / Early ───
+  function stripLeadingZeros(s: string): string {
+    if (s === '' || s === '0') return s;
+    const cleaned = s.replace(/^0+/, '');
+    return cleaned === '' ? '0' : cleaned;
+  }
+
   function handleRemainingChange(entryId: string, value: string) {
+    const v = stripLeadingZeros(value);
     setEntries((prev) =>
       prev.map((e) => {
         if (e.id !== entryId) return e;
-        const cashOut = (Number(value) || 0) + (Number(e.early) || 0);
-        return { ...e, remaining: value, cash_out: cashOut };
+        const cashOut = (Number(v) || 0) + (Number(e.early) || 0);
+        return { ...e, remaining: v, cash_out: cashOut };
       })
     );
   }
 
   function handleEarlyChange(entryId: string, value: string) {
+    const v = stripLeadingZeros(value);
     setEntries((prev) =>
       prev.map((e) => {
         if (e.id !== entryId) return e;
-        const cashOut = (Number(e.remaining) || 0) + (Number(value) || 0);
-        return { ...e, early: value, cash_out: cashOut };
+        const cashOut = (Number(e.remaining) || 0) + (Number(v) || 0);
+        return { ...e, early: v, cash_out: cashOut };
       })
     );
   }
@@ -605,7 +613,7 @@ export default function SessionDetailPage() {
               inputMode="numeric"
               pattern="[0-9]*"
               value={addBuyIn}
-              onChange={(e) => setAddBuyIn(e.target.value)}
+              onChange={(e) => setAddBuyIn(stripLeadingZeros(e.target.value))}
               className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-center text-lg focus:outline-none focus:border-green-500"
             />
           </div>
