@@ -31,6 +31,7 @@ interface OpponentStat {
   id: string;
   together: number;       // sessions together
   myWins: number;         // sessions where I profit > 0
+  myTotalProfit: number;  // my total profit when playing with them
   myAvgProfit: number;    // my avg profit when playing with them
 }
 
@@ -44,6 +45,8 @@ export default function StatsPage() {
   const [opponentEntries, setOpponentEntries] = useState<OpponentEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'all' | '30d' | '90d'>('all');
+  const [tab, setTab] = useState<'stats' | 'opponents'>('stats');
+  const [expandedOpp, setExpandedOpp] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,6 +178,7 @@ export default function StatsPage() {
         id,
         together,
         myWins,
+        myTotalProfit: Math.round(total),
         myAvgProfit: together > 0 ? Math.round(total / together) : 0,
       });
     }
@@ -225,7 +229,7 @@ export default function StatsPage() {
       </div>
 
       {/* Time Period Filter */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-4">
         {([['all', '全部'], ['30d', '近30天'], ['90d', '近90天']] as const).map(([key, label]) => (
           <button
             key={key}
@@ -240,6 +244,99 @@ export default function StatsPage() {
           </button>
         ))}
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6">
+        {([['stats', '个人战绩'], ['opponents', '对手战绩']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+              tab === key
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:text-white'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'opponents' ? (
+        /* ═══ Opponents Tab ═══ */
+        <div>
+          {opponentStats.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">暂无对手数据</p>
+          ) : (
+            <div className="space-y-3">
+              {opponentStats.map((opp) => {
+                const oppWinRate = opp.together > 0
+                  ? Math.round((opp.myWins / opp.together) * 100)
+                  : 0;
+                const isExpanded = expandedOpp === opp.id;
+                return (
+                  <div key={opp.id} className="bg-gray-800 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => setExpandedOpp(isExpanded ? null : opp.id)}
+                      className="w-full px-4 py-3 flex items-center justify-between text-left active:bg-gray-700/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-200">{opp.name}</span>
+                        <span className="text-gray-600 text-xs">{opp.together}场</span>
+                      </div>
+                      <span className="text-gray-500 text-sm">{isExpanded ? '▲' : '▼'}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="px-4 pb-4">
+                        <div className="grid grid-cols-3 gap-3 mb-3">
+                          <div className="bg-gray-700/50 rounded-lg p-2.5 text-center">
+                            <div className="text-lg font-bold">{opp.together}</div>
+                            <div className="text-xs text-gray-500">同场次数</div>
+                          </div>
+                          <div className="bg-gray-700/50 rounded-lg p-2.5 text-center">
+                            <div className={`text-lg font-bold ${
+                              oppWinRate >= 50 ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                              {oppWinRate}%
+                            </div>
+                            <div className="text-xs text-gray-500">胜率</div>
+                          </div>
+                          <div className="bg-gray-700/50 rounded-lg p-2.5 text-center">
+                            <div className={`text-lg font-bold font-mono ${
+                              opp.myAvgProfit > 0 ? 'text-green-400' :
+                              opp.myAvgProfit < 0 ? 'text-red-400' : 'text-gray-400'
+                            }`}>
+                              {opp.myAvgProfit > 0 ? '+' : ''}{opp.myAvgProfit}
+                            </div>
+                            <div className="text-xs text-gray-500">场均盈亏</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">同场总盈亏</span>
+                          <span className={`font-mono font-bold ${
+                            opp.myTotalProfit > 0 ? 'text-green-400' :
+                            opp.myTotalProfit < 0 ? 'text-red-400' : 'text-gray-400'
+                          }`}>
+                            {opp.myTotalProfit > 0 ? '+' : ''}{opp.myTotalProfit}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => router.push(`/stats/${opp.id}`)}
+                          className="mt-3 w-full py-2 rounded-lg bg-gray-700 text-gray-300 text-sm hover:bg-gray-600 transition-colors"
+                        >
+                          查看 {opp.name} 的战绩 →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+      /* ═══ Personal Stats Tab ═══ */
+      <>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -379,45 +476,6 @@ export default function StatsPage() {
         </div>
       )}
 
-      {/* Opponent Stats */}
-      {opponentStats.length > 0 && (
-        <div className="bg-gray-800 rounded-xl p-4 mb-6">
-          <h2 className="font-semibold mb-3 text-gray-300">对手战绩</h2>
-          <div className="space-y-2">
-            {opponentStats.map((opp) => {
-              const oppWinRate = opp.together > 0
-                ? Math.round((opp.myWins / opp.together) * 100)
-                : 0;
-              return (
-                <button
-                  key={opp.id}
-                  onClick={() => router.push(`/stats/${opp.id}`)}
-                  className="w-full flex items-center justify-between py-2 border-b border-gray-700 last:border-0 text-left active:bg-gray-700/50 rounded transition-colors"
-                >
-                  <div>
-                    <span className="text-gray-200">{opp.name}</span>
-                    <span className="text-gray-600 text-xs ml-2">{opp.together}场</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs ${
-                      oppWinRate >= 50 ? 'text-green-400' : 'text-red-400'
-                    }`}>
-                      胜率{oppWinRate}%
-                    </span>
-                    <span className={`font-mono text-sm font-bold ${
-                      opp.myAvgProfit > 0 ? 'text-green-400' :
-                      opp.myAvgProfit < 0 ? 'text-red-400' : 'text-gray-400'
-                    }`}>
-                      {opp.myAvgProfit > 0 ? '+' : ''}{opp.myAvgProfit}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Session History */}
       <div>
         <h2 className="font-semibold mb-3 text-gray-300">历史记录</h2>
@@ -461,6 +519,8 @@ export default function StatsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

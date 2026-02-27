@@ -23,12 +23,16 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
     const [sharing, setSharing] = useState(false);
     const { toast } = useToast();
 
-    function handleCopy() {
+    async function handleCopy() {
       const text = formatSettlementText(settlements, sessionNote);
-      navigator.clipboard.writeText(text);
-      setCopied(true);
-      toast('已复制到剪贴板', 'success');
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        toast('已复制到剪贴板', 'success');
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        toast('复制失败，请手动复制');
+      }
     }
 
     async function handleShareImage() {

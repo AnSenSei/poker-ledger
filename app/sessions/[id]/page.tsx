@@ -345,10 +345,11 @@ export default function SessionDetailPage() {
     setSettling(true);
     try {
       for (const e of withCashOut) {
-        await supabase
+        const { error: entryErr } = await supabase
           .from('entries')
           .update({ cash_out: e.cash_out })
           .eq('id', e.id);
+        if (entryErr) throw entryErr;
       }
 
       const transfers = calculateSettlement(withCashOut);

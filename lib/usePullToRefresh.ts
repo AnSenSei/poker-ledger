@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const THRESHOLD = 80;
 
@@ -9,18 +9,21 @@ export function usePullToRefresh(onRefresh: () => Promise<void>) {
   const [pullDistance, setPullDistance] = useState(0);
   const startY = useRef(0);
   const pulling = useRef(false);
+  const pullDistanceRef = useRef(0);
+  const onRefreshRef = useRef(onRefresh);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    setPullDistance(0);
-    try {
-      await onRefresh();
-    } finally {
-      setRefreshing(false);
-    }
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
   }, [onRefresh]);
 
   useEffect(() => {
+    function handleRefresh() {
+      setRefreshing(true);
+      setPullDistance(0);
+      pullDistanceRef.current = 0;
+      onRefreshRef.current().finally(() => setRefreshing(false));
+    }
+
     function onTouchStart(e: TouchEvent) {
       if (window.scrollY === 0) {
         startY.current = e.touches[0].clientY;
@@ -32,9 +35,12 @@ export function usePullToRefresh(onRefresh: () => Promise<void>) {
       if (!pulling.current) return;
       const dy = e.touches[0].clientY - startY.current;
       if (dy > 0) {
-        setPullDistance(Math.min(dy * 0.5, THRESHOLD * 1.5));
+        const dist = Math.min(dy * 0.5, THRESHOLD * 1.5);
+        pullDistanceRef.current = dist;
+        setPullDistance(dist);
       } else {
         pulling.current = false;
+        pullDistanceRef.current = 0;
         setPullDistance(0);
       }
     }
@@ -42,9 +48,10 @@ export function usePullToRefresh(onRefresh: () => Promise<void>) {
     function onTouchEnd() {
       if (!pulling.current) return;
       pulling.current = false;
-      if (pullDistance >= THRESHOLD) {
+      if (pullDistanceRef.current >= THRESHOLD) {
         handleRefresh();
       } else {
+        pullDistanceRef.current = 0;
         setPullDistance(0);
       }
     }
@@ -58,7 +65,7 @@ export function usePullToRefresh(onRefresh: () => Promise<void>) {
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
     };
-  }, [pullDistance, handleRefresh]);
+  }, []);
 
   return { refreshing, pullDistance };
 }

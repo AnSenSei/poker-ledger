@@ -14,6 +14,7 @@ interface Props {
 
 export default function BottomSheet({ open, onClose, title, children }: Props) {
   const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const startY = useRef(0);
   const dragging = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -21,7 +22,6 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
-      setDragY(0);
     } else {
       document.body.style.overflow = '';
     }
@@ -35,6 +35,7 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
     if (sheetRef.current && sheetRef.current.scrollTop > 0) return;
     startY.current = e.touches[0].clientY;
     dragging.current = true;
+    setIsDragging(true);
   }
 
   function handleTouchMove(e: React.TouchEvent) {
@@ -48,6 +49,7 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
   function handleTouchEnd() {
     if (!dragging.current) return;
     dragging.current = false;
+    setIsDragging(false);
     if (dragY > DISMISS_THRESHOLD) {
       hapticLight();
       onClose();
@@ -71,8 +73,8 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
         className="absolute bottom-0 left-0 right-0 bg-gray-800 rounded-t-2xl max-h-[85vh] overflow-y-auto safe-area-bottom"
         style={{
           transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
-          transition: dragging.current ? 'none' : 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
-          animation: dragY === 0 && !dragging.current ? 'slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+          transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+          animation: dragY === 0 && !isDragging ? 'slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
