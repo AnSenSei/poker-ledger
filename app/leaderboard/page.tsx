@@ -27,7 +27,7 @@ interface PlayerStats {
   maxLoss: number;
 }
 
-type SortKey = 'totalProfit' | 'winRate' | 'totalSessions' | 'avgProfit';
+type SortKey = 'winRate' | 'totalSessions' | 'avgProfit';
 type Period = 'all' | '30d' | '90d';
 
 export default function LeaderboardPage() {
@@ -35,7 +35,7 @@ export default function LeaderboardPage() {
   const { toast } = useToast();
   const [allEntries, setAllEntries] = useState<EntryRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<SortKey>('totalProfit');
+  const [sortBy, setSortBy] = useState<SortKey>('winRate');
   const [period, setPeriod] = useState<Period>('all');
 
   const { refreshing, pullDistance } = usePullToRefresh(
@@ -102,7 +102,6 @@ export default function LeaderboardPage() {
   })();
 
   const sorted = [...stats].sort((a, b) => {
-    if (sortBy === 'totalProfit') return b.totalProfit - a.totalProfit;
     if (sortBy === 'winRate') return b.winRate - a.winRate;
     if (sortBy === 'totalSessions') return b.totalSessions - a.totalSessions;
     if (sortBy === 'avgProfit') return b.avgProfit - a.avgProfit;
@@ -110,9 +109,8 @@ export default function LeaderboardPage() {
   });
 
   const sortOptions: { key: SortKey; label: string }[] = [
-    { key: 'totalProfit', label: '总盈亏' },
-    { key: 'avgProfit', label: '场均' },
     { key: 'winRate', label: '胜率' },
+    { key: 'avgProfit', label: '场均' },
     { key: 'totalSessions', label: '场次' },
   ];
 
@@ -204,22 +202,6 @@ export default function LeaderboardPage() {
                     <span>{p.totalSessions}场</span>
                     <span>胜率{p.winRate}%</span>
                     <span>场均{p.avgProfit > 0 ? '+' : ''}{p.avgProfit}</span>
-                  </div>
-                </div>
-
-                {/* Total profit */}
-                <div className="flex-shrink-0 text-right">
-                  <div
-                    className={`text-xl font-bold font-mono ${
-                      p.totalProfit > 0
-                        ? 'text-green-400'
-                        : p.totalProfit < 0
-                        ? 'text-red-400'
-                        : 'text-gray-400'
-                    }`}
-                  >
-                    {p.totalProfit > 0 ? '+' : ''}
-                    {p.totalProfit}
                   </div>
                 </div>
               </button>
