@@ -15,6 +15,7 @@ interface Props {
 export default function BottomSheet({ open, onClose, title, children }: Props) {
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [hasAnimated, setHasAnimated] = useState(false);
   const startY = useRef(0);
   const dragging = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -22,6 +23,7 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
+      setHasAnimated(false);
     } else {
       document.body.style.overflow = '';
     }
@@ -31,6 +33,9 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
   }, [open]);
 
   function handleTouchStart(e: React.TouchEvent) {
+    // Don't start drag when interacting with form elements
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
     // Only start drag if sheet is scrolled to top
     if (sheetRef.current && sheetRef.current.scrollTop > 0) return;
     startY.current = e.touches[0].clientY;
@@ -74,11 +79,12 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
         style={{
           transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
           transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
-          animation: dragY === 0 && !isDragging ? 'slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+          animation: !hasAnimated ? 'slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onAnimationEnd={() => setHasAnimated(true)}
       >
         {/* Drag handle */}
         <div className="flex justify-center pt-3 pb-2 sticky top-0 cursor-grab">
