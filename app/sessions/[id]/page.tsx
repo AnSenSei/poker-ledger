@@ -21,6 +21,8 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import EntryCard from '@/components/EntryCard';
 import SettlementResult from '@/components/SettlementResult';
 import { SessionDetailSkeleton } from '@/components/Skeleton';
+import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import PullIndicator from '@/components/PullIndicator';
 import { hapticMedium, hapticSuccess, hapticHeavy } from '@/lib/haptic';
 
 interface LocalEntry extends EntryWithPlayer {
@@ -118,6 +120,10 @@ export default function SessionDetailPage() {
       setLoading(false);
     }
   }, [id, toast]);
+
+  const { refreshing, pullDistance } = usePullToRefresh(
+    async () => { await fetchData(); }
+  );
 
   useEffect(() => {
     fetchData();
@@ -472,6 +478,9 @@ export default function SessionDetailPage() {
 
   return (
     <div className="max-w-lg mx-auto p-4 pb-24">
+      {/* Pull to refresh */}
+      <PullIndicator pullDistance={pullDistance} refreshing={refreshing} />
+
       {/* Header */}
       <div className="flex items-center gap-3 py-4 mb-2">
         <button
@@ -522,6 +531,13 @@ export default function SessionDetailPage() {
           {isOpen ? '进行中' : '已结算'}
         </span>
       </div>
+
+      {/* Field explanation */}
+      {isOpen && entries.length > 0 && (
+        <p className="text-xs text-gray-600 mb-3">
+          买入 = 总共带入的筹码 · 剩余筹码 = 结束时手上的筹码 · 已兑出 = 中途已换回现金的筹码
+        </p>
+      )}
 
       {/* Player Entries */}
       <div className="space-y-3 mb-4">
