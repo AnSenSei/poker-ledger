@@ -284,7 +284,6 @@ export default function SessionDetailPage() {
 
   const debouncedSaveCashOut = useDebounce(
     async (entryId: string, remaining: string) => {
-      if (remaining === '') return;
       const cashOut = Number(remaining) || 0;
       try {
         const { error } = await supabase
@@ -301,10 +300,18 @@ export default function SessionDetailPage() {
 
   // ─── Confirm / Unconfirm ───
   function handleConfirmEntry(entryId: string) {
-    // Save cash_out immediately on confirm
+    // Save cash_out immediately on confirm (empty remaining = 0)
     const entry = entries.find((e) => e.id === entryId);
-    if (entry && entry.remaining !== '') {
-      debouncedSaveCashOut(entryId, entry.remaining);
+    if (entry) {
+      const remaining = entry.remaining || '0';
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId
+            ? { ...e, remaining, cash_out: Number(remaining) || 0 }
+            : e
+        )
+      );
+      debouncedSaveCashOut(entryId, remaining);
     }
     setConfirmedIds((prev) => new Set(prev).add(entryId));
   }

@@ -38,10 +38,7 @@ export default function EntryCard({
   onUnconfirm,
   onRemove,
 }: Props) {
-  const hasRemaining = entry.remaining !== '';
-  const net = hasRemaining
-    ? Number(entry.remaining) - Number(entry.buy_in)
-    : null;
+  const net = Number(entry.remaining || 0) - Number(entry.buy_in);
 
   return (
     <div className={`bg-gray-800 rounded-xl p-4 transition-colors ${confirmed ? 'ring-2 ring-green-500 bg-green-900/10' : ''}`}>
@@ -136,12 +133,8 @@ export default function EntryCard({
               </button>
             ) : (
               <button
-                onClick={() => {
-                  if (entry.remaining === '') return;
-                  onConfirm(entry.id);
-                }}
-                disabled={entry.remaining === ''}
-                className="px-3 py-2 rounded-lg text-gray-400 bg-gray-700 border border-gray-600 text-sm whitespace-nowrap transition-colors hover:bg-gray-600 disabled:text-gray-600 disabled:hover:bg-gray-700 press-effect"
+                onClick={() => onConfirm(entry.id)}
+                className="px-3 py-2 rounded-lg text-white bg-green-600 border border-green-500 text-sm whitespace-nowrap transition-colors hover:bg-green-700 press-effect"
               >
                 确认
               </button>
