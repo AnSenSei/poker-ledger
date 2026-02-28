@@ -39,10 +39,9 @@ export default function EntryCard({
   onRemove,
 }: Props) {
   const hasRemaining = entry.remaining !== '';
-  const netChips = hasRemaining
+  const net = hasRemaining
     ? Number(entry.remaining) - Number(entry.buy_in)
     : null;
-  const netDollars = netChips != null ? netChips / 4 : null;
 
   return (
     <div className={`bg-gray-800 rounded-xl p-4 transition-colors ${confirmed ? 'ring-1 ring-green-800/50' : ''}`}>
@@ -50,18 +49,18 @@ export default function EntryCard({
         <span className="font-semibold text-lg">
           {entry.players.name}
         </span>
-        {netDollars != null && (
+        {net != null && (
           <span
             className={`font-mono font-bold ${
-              netDollars > 0
+              net > 0
                 ? 'text-green-400'
-                : netDollars < 0
+                : net < 0
                 ? 'text-red-400'
                 : 'text-gray-400'
             }`}
           >
-            {netDollars > 0 ? '+' : ''}
-            {netDollars % 1 === 0 ? netDollars : netDollars.toFixed(2)}
+            {net > 0 ? '+' : ''}
+            {net}
           </span>
         )}
         {isOpen && !confirmed && (
