@@ -56,7 +56,7 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
                           : 'text-gray-400'
                       }`}
                     >
-                      {p.net > 0 ? '+' : ''}{fmt(p.net)}
+                      {p.net > 0 ? '+' : ''}¥{fmt(p.net)}
                     </span>
                   </span>
                 ))}
@@ -79,7 +79,7 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
                   {' → '}
                   <span className="text-green-400">{t.to}</span>
                 </span>
-                <span className="font-mono font-bold">${fmt(t.amount)}</span>
+                <span className="font-mono font-bold">¥{fmt(t.amount)}</span>
               </div>
             ))}
           </div>

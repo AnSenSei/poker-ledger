@@ -538,7 +538,7 @@ export default function SessionDetailPage() {
       {/* Field explanation */}
       {isOpen && entries.length > 0 && (
         <p className="text-xs text-gray-600 mb-3">
-          买入 = 总共带入的筹码 · 剩余筹码 = 结束时手上的筹码 · 每个筹码 = $0.25
+          买入 = 总共带入的筹码 · 剩余筹码 = 结束时手上的筹码 · 每个筹码 = ¥0.25
         </p>
       )}
 
