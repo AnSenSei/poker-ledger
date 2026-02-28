@@ -17,13 +17,13 @@ export function validateZeroSum(entries: EntryWithPlayer[]): string | null {
 /**
  * 最小化转账的贪心算法
  * 输入：所有玩家的 entry（必须已填 cash_out）
- * 输出：谁转给谁多少钱
+ * 输出：谁转给谁多少钱（金额已除以4，每个筹码 = $0.25）
  */
 export function calculateSettlement(entries: EntryWithPlayer[]): Transfer[] {
   const pool = entries.map((e) => ({
     name: e.players.name,
     playerId: e.player_id,
-    amount: Number(e.cash_out ?? 0) - Number(e.buy_in),
+    amount: (Number(e.cash_out ?? 0) - Number(e.buy_in)) / 4,
   }));
 
   const winners = pool

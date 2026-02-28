@@ -27,7 +27,6 @@ import { hapticMedium, hapticSuccess, hapticHeavy } from '@/lib/haptic';
 
 interface LocalEntry extends EntryWithPlayer {
   remaining: string;
-  early: string;
 }
 
 export default function SessionDetailPage() {
@@ -54,6 +53,9 @@ export default function SessionDetailPage() {
   const [addPlayerId, setAddPlayerId] = useState('');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [addBuyIn, setAddBuyIn] = useState('400');
+
+  // Confirmed entries
+  const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
 
   // Confirm dialog state
   const [confirmState, setConfirmState] = useState<{
@@ -92,7 +94,6 @@ export default function SessionDetailPage() {
         (e: EntryWithPlayer) => ({
           ...e,
           remaining: e.cash_out != null ? String(e.cash_out) : '',
-          early: '0',
         })
       );
       setEntries(mapped);
@@ -264,7 +265,7 @@ export default function SessionDetailPage() {
     600
   );
 
-  // ─── Update Remaining / Early ───
+  // ─── Update Remaining ───
   function stripLeadingZeros(s: string): string {
     if (s === '' || s === '0') return s;
     const cleaned = s.replace(/^0+/, '');
@@ -276,27 +277,15 @@ export default function SessionDetailPage() {
     setEntries((prev) =>
       prev.map((e) => {
         if (e.id !== entryId) return e;
-        const cashOut = (Number(v) || 0) + (Number(e.early) || 0);
-        return { ...e, remaining: v, cash_out: cashOut };
-      })
-    );
-  }
-
-  function handleEarlyChange(entryId: string, value: string) {
-    const v = stripLeadingZeros(value);
-    setEntries((prev) =>
-      prev.map((e) => {
-        if (e.id !== entryId) return e;
-        const cashOut = (Number(e.remaining) || 0) + (Number(v) || 0);
-        return { ...e, early: v, cash_out: cashOut };
+        return { ...e, remaining: v, cash_out: Number(v) || 0 };
       })
     );
   }
 
   const debouncedSaveCashOut = useDebounce(
-    async (entryId: string, remaining: string, early: string) => {
-      const cashOut = (Number(remaining) || 0) + (Number(early) || 0);
-      if (remaining === '' && early === '0') return;
+    async (entryId: string, remaining: string) => {
+      if (remaining === '') return;
+      const cashOut = Number(remaining) || 0;
       try {
         const { error } = await supabase
           .from('entries')
@@ -309,6 +298,24 @@ export default function SessionDetailPage() {
     },
     600
   );
+
+  // ─── Confirm / Unconfirm ───
+  function handleConfirmEntry(entryId: string) {
+    // Save cash_out immediately on confirm
+    const entry = entries.find((e) => e.id === entryId);
+    if (entry && entry.remaining !== '') {
+      debouncedSaveCashOut(entryId, entry.remaining);
+    }
+    setConfirmedIds((prev) => new Set(prev).add(entryId));
+  }
+
+  function handleUnconfirmEntry(entryId: string) {
+    setConfirmedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(entryId);
+      return next;
+    });
+  }
 
   // ─── Remove Player ───
   function handleRemovePlayer(entryId: string) {
@@ -334,20 +341,9 @@ export default function SessionDetailPage() {
 
   // ─── Settle ───
   async function handleSettle() {
-    const incomplete = entries.filter(
-      (e) => e.remaining === '' && e.cash_out == null
-    );
-    if (incomplete.length > 0) {
-      toast(
-        `以下玩家还没填结算：${incomplete.map((e) => e.players.name).join('、')}`,
-        'info'
-      );
-      return;
-    }
-
     const withCashOut: EntryWithPlayer[] = entries.map((e) => ({
       ...e,
-      cash_out: (Number(e.remaining) || 0) + (Number(e.early) || 0),
+      cash_out: Number(e.remaining) || 0,
     }));
 
     const err = validateZeroSum(withCashOut);
@@ -451,13 +447,13 @@ export default function SessionDetailPage() {
   // ─── Computed Values ───
   const totalBuyIn = entries.reduce((s, e) => s + Number(e.buy_in), 0);
   const totalCashOut = entries.reduce(
-    (s, e) => s + (Number(e.remaining) || 0) + (Number(e.early) || 0),
+    (s, e) => s + (Number(e.remaining) || 0),
     0
   );
   const diff = totalBuyIn - totalCashOut;
   const isBalanced = Math.abs(diff) < 0.01;
-  const allFilled =
-    entries.length > 0 && entries.every((e) => e.remaining !== '');
+  const allConfirmed =
+    entries.length > 0 && entries.every((e) => confirmedIds.has(e.id));
   const isOpen = session?.status === 'open';
 
   const availablePlayers = allPlayers.filter(
@@ -535,7 +531,7 @@ export default function SessionDetailPage() {
       {/* Field explanation */}
       {isOpen && entries.length > 0 && (
         <p className="text-xs text-gray-600 mb-3">
-          买入 = 总共带入的筹码 · 剩余筹码 = 结束时手上的筹码 · 已兑出 = 中途已换回现金的筹码
+          买入 = 总共带入的筹码 · 剩余筹码 = 结束时手上的筹码 · 每个筹码 = $0.25
         </p>
       )}
 
@@ -546,11 +542,13 @@ export default function SessionDetailPage() {
             key={entry.id}
             entry={entry}
             isOpen={isOpen}
+            confirmed={confirmedIds.has(entry.id)}
             onBuyInChange={handleBuyInChange}
             onBuyInSave={debouncedSaveBuyIn}
             onRemainingChange={handleRemainingChange}
-            onEarlyChange={handleEarlyChange}
             onCashOutSave={debouncedSaveCashOut}
+            onConfirm={handleConfirmEntry}
+            onUnconfirm={handleUnconfirmEntry}
             onRemove={handleRemovePlayer}
           />
         ))}
@@ -671,13 +669,13 @@ export default function SessionDetailPage() {
       {isOpen && entries.length >= 2 && (
         <button
           onClick={() => { hapticHeavy(); handleSettle(); }}
-          disabled={!allFilled || !isBalanced || settling}
+          disabled={!allConfirmed || !isBalanced || settling}
           className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl py-4 text-lg font-medium transition-colors mb-6 press-effect"
         >
           {settling
             ? '结算中...'
-            : !allFilled
-            ? '请填写所有玩家的结算'
+            : !allConfirmed
+            ? '请所有玩家确认'
             : !isBalanced
             ? '总数不平衡，无法结算'
             : '💰 结算'}

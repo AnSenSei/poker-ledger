@@ -21,9 +21,13 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
 
     const profitList = entries
       ? [...entries]
-          .map((e) => ({ name: e.name, net: e.cashOut - e.buyIn }))
+          .map((e) => ({ name: e.name, net: (e.cashOut - e.buyIn) / 4 }))
           .sort((a, b) => b.net - a.net)
       : [];
+
+    function fmt(n: number): string {
+      return n % 1 === 0 ? String(n) : n.toFixed(2);
+    }
 
     return (
       <div>
@@ -52,7 +56,7 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
                           : 'text-gray-400'
                       }`}
                     >
-                      {p.net > 0 ? '+' : ''}{p.net}
+                      {p.net > 0 ? '+' : ''}{fmt(p.net)}
                     </span>
                   </span>
                 ))}
@@ -75,7 +79,7 @@ const SettlementResult = forwardRef<HTMLDivElement, Props>(
                   {' → '}
                   <span className="text-green-400">{t.to}</span>
                 </span>
-                <span className="font-mono font-bold">{t.amount}</span>
+                <span className="font-mono font-bold">${fmt(t.amount)}</span>
               </div>
             ))}
           </div>
