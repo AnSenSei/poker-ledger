@@ -167,7 +167,7 @@ export default function SessionDetailPage() {
         toAdd.map((e) => ({
           session_id: id,
           player_id: e.player_id,
-          buy_in: Number(e.buy_in),
+          buy_in: 400,
         }))
       );
       if (insErr) throw insErr;

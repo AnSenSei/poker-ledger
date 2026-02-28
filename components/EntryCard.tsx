@@ -44,7 +44,7 @@ export default function EntryCard({
     : null;
 
   return (
-    <div className={`bg-gray-800 rounded-xl p-4 transition-colors ${confirmed ? 'ring-1 ring-green-800/50' : ''}`}>
+    <div className={`bg-gray-800 rounded-xl p-4 transition-colors ${confirmed ? 'ring-2 ring-green-500 bg-green-900/10' : ''}`}>
       <div className="flex items-center justify-between mb-3">
         <span className="font-semibold text-lg">
           {entry.players.name}
@@ -130,9 +130,9 @@ export default function EntryCard({
             {confirmed ? (
               <button
                 onClick={() => onUnconfirm(entry.id)}
-                className="px-3 py-2 rounded-lg text-green-400 bg-green-900/30 border border-green-800/50 text-sm whitespace-nowrap transition-colors hover:bg-green-900/50 press-effect"
+                className="px-3 py-2 rounded-lg text-red-400 bg-gray-700 border border-gray-600 text-sm whitespace-nowrap transition-colors hover:bg-red-900/30 press-effect"
               >
-                ✓ 已确认
+                取消确认
               </button>
             ) : (
               <button
