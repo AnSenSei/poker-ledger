@@ -50,7 +50,7 @@ export default function SessionDetailPage() {
 
   // Add player state
   const [showAdd, setShowAdd] = useState(false);
-  const [addPlayerId, setAddPlayerId] = useState('');
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set());
   const [newPlayerName, setNewPlayerName] = useState('');
   const [addBuyIn, setAddBuyIn] = useState('400');
 
@@ -199,39 +199,57 @@ export default function SessionDetailPage() {
   }
 
   // ─── Add Player ───
-  async function handleAddPlayer() {
-    let playerId = addPlayerId;
+  function togglePlayer(playerId: string) {
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  }
+
+  async function handleAddPlayers() {
+    const buyIn = Number(addBuyIn) || 400;
+    const playerIds = [...selectedPlayerIds];
 
     try {
-      if (!playerId && newPlayerName.trim()) {
+      // Create new player if name is provided
+      if (newPlayerName.trim()) {
         const { data, error } = await supabase
           .from('players')
           .upsert({ name: newPlayerName.trim() }, { onConflict: 'name' })
           .select()
           .single();
         if (error || !data) throw error ?? new Error('创建玩家失败');
-        playerId = data.id;
+        if (!playerIds.includes(data.id)) {
+          playerIds.push(data.id);
+        }
       }
 
-      if (!playerId) {
-        toast('请选择或输入玩家名', 'info');
+      if (playerIds.length === 0) {
+        toast('请选择或输入玩家', 'info');
         return;
       }
 
-      if (entries.some((e) => e.player_id === playerId)) {
-        toast('该玩家已在本场牌局中', 'info');
+      // Filter out players already in session
+      const existingIds = new Set(entries.map((e) => e.player_id));
+      const toAdd = playerIds.filter((pid) => !existingIds.has(pid));
+      if (toAdd.length === 0) {
+        toast('选择的玩家都已在本场牌局中', 'info');
         return;
       }
 
-      const { error } = await supabase.from('entries').insert({
-        session_id: id,
-        player_id: playerId,
-        buy_in: Number(addBuyIn) || 400,
-      });
+      const { error } = await supabase.from('entries').insert(
+        toAdd.map((pid) => ({
+          session_id: id,
+          player_id: pid,
+          buy_in: buyIn,
+        }))
+      );
       if (error) throw error;
 
       setShowAdd(false);
-      setAddPlayerId('');
+      setSelectedPlayerIds(new Set());
       setNewPlayerName('');
       setAddBuyIn('400');
       fetchData();
@@ -587,47 +605,46 @@ export default function SessionDetailPage() {
         title="添加玩家"
       >
         <div className="space-y-4">
-          <div>
-            <label className="text-sm text-gray-400 block mb-2">
-              选择已有玩家
-            </label>
-            <select
-              value={addPlayerId}
-              onChange={(e) => {
-                setAddPlayerId(e.target.value);
-                setNewPlayerName('');
-              }}
-              className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 focus:outline-none focus:border-green-500"
-            >
-              <option value="">选择玩家...</option>
-              {availablePlayers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {availablePlayers.length > 0 && (
+            <div>
+              <label className="text-sm text-gray-400 block mb-2">
+                选择玩家（可多选）
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {availablePlayers.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePlayer(p.id)}
+                    className={`px-3 py-2 rounded-lg text-sm transition-colors press-effect ${
+                      selectedPlayerIds.has(p.id)
+                        ? 'bg-green-600 text-white border border-green-500'
+                        : 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
+                    }`}
+                  >
+                    {selectedPlayerIds.has(p.id) ? '✓ ' : ''}{p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <div className="flex-1 h-px bg-gray-700" />
-            <span>或输入新玩家</span>
+            <span>新玩家</span>
             <div className="flex-1 h-px bg-gray-700" />
           </div>
 
           <input
             type="text"
             value={newPlayerName}
-            onChange={(e) => {
-              setNewPlayerName(e.target.value);
-              setAddPlayerId('');
-            }}
-            placeholder="新玩家名字"
+            onChange={(e) => setNewPlayerName(e.target.value)}
+            placeholder="输入新玩家名字"
             className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 focus:outline-none focus:border-green-500"
           />
 
           <div>
             <label className="text-sm text-gray-400 block mb-2">
-              买入金额
+              买入筹码
             </label>
             <input
               type="number"
@@ -640,10 +657,13 @@ export default function SessionDetailPage() {
           </div>
 
           <button
-            onClick={handleAddPlayer}
-            className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 rounded-xl py-4 text-lg font-medium transition-colors"
+            onClick={handleAddPlayers}
+            disabled={selectedPlayerIds.size === 0 && !newPlayerName.trim()}
+            className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 disabled:text-gray-500 rounded-xl py-4 text-lg font-medium transition-colors"
           >
-            确认添加
+            确认添加{selectedPlayerIds.size + (newPlayerName.trim() ? 1 : 0) > 0
+              ? ` (${selectedPlayerIds.size + (newPlayerName.trim() ? 1 : 0)}人)`
+              : ''}
           </button>
         </div>
       </BottomSheet>
